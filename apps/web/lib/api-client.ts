@@ -9,8 +9,21 @@ import type {
 
 import { authStore } from '../store/auth.store';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const SESSION_PROXY_URL = '';
+
+const getApiUrl = (): string => {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    return 'http://localhost:4000';
+  }
+
+  throw new Error('NEXT_PUBLIC_API_URL is required in production');
+};
 
 type ApiClientInit = RequestInit & {
   requireAuth?: boolean;
@@ -48,6 +61,7 @@ export const apiClient = async <T>(
   path: string,
   init: ApiClientInit = {},
 ): Promise<ApiSuccessResponse<T>> => {
+  const apiUrl = getApiUrl();
   const headers = new Headers(init.headers);
   const requireAuth = init.requireAuth ?? true;
 
@@ -62,7 +76,7 @@ export const apiClient = async <T>(
     }
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${apiUrl}${path}`, {
     ...init,
     headers,
     credentials: 'include',

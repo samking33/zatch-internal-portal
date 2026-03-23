@@ -4,10 +4,12 @@ import { PageHeader } from '../../../../components/PageHeader';
 import { SellerDetail } from '../../../../features/sellers/SellerDetail';
 import { serverFetch } from '../../../../lib/server-fetch';
 
-const SellerDetailPage = async ({ params }: { params: { id: string } }) => {
+const SellerDetailPage = async ({ params }: { params: Promise<{ id: string }> }) => {
+  const { id } = await params;
+
   const [sellerResponse, auditResponse] = await Promise.all([
-    serverFetch<ISeller>(`/api/sellers/${params.id}`),
-    serverFetch<PaginatedResult<IAuditLog>>(`/api/audit/${params.id}?targetCollection=sellers&limit=5`),
+    serverFetch<ISeller>(`/api/sellers/${id}`),
+    serverFetch<PaginatedResult<IAuditLog>>(`/api/audit/${id}?targetCollection=sellers&limit=5`),
   ]);
 
   return (

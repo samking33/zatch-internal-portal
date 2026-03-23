@@ -1,3 +1,4 @@
+import rateLimit from 'express-rate-limit';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 
 import { loginSchema } from '@zatch/shared';
@@ -10,6 +11,53 @@ import { validateRequest } from '../../middleware/validate.middleware';
 import { authService } from './auth.service';
 
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
+
+const authLoginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({
+      success: false,
+      error: 'Too many login attempts',
+    });
+  },
+});
+
+const getRequestOrigin = (req: Request): string | null => {
+  const origin = req.get('origin');
+
+  if (origin) {
+    return origin;
+  }
+
+  const referer = req.get('referer');
+
+  if (!referer) {
+    return null;
+  }
+
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return null;
+  }
+};
+
+const assertTrustedOrigin = (req: Request): void => {
+  const requestOrigin = getRequestOrigin(req);
+
+  if (!requestOrigin) {
+    return;
+  }
+
+  const trustedOrigin = new URL(getEnv().CORS_ORIGIN).origin;
+
+  if (requestOrigin !== trustedOrigin) {
+    throw new AppError(403, 'Forbidden origin');
+  }
+};
 
 const getRefreshCookieOptions = () => {
   const env = getEnv();
@@ -35,6 +83,7 @@ export const authRouter = Router();
 
 authRouter.post(
   '/login',
+  authLoginRateLimiter,
   validateRequest({ body: loginSchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -56,6 +105,8 @@ authRouter.post(
 
 authRouter.post('/refresh', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    assertTrustedOrigin(req);
+
     const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
 
     if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
@@ -71,6 +122,8 @@ authRouter.post('/refresh', async (req: Request, res: Response, next: NextFuncti
 
 authRouter.post('/logout', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    assertTrustedOrigin(req);
+
     if (!req.user) {
       throw new AppError(401, 'Unauthorized');
     }

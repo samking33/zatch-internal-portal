@@ -4,6 +4,7 @@ import express, { Router, type NextFunction, type Request, type Response } from 
 import helmet from 'helmet';
 import * as Sentry from '@sentry/node';
 import path from 'path';
+import rateLimit from 'express-rate-limit';
 
 import mongoose from 'mongoose';
 
@@ -68,10 +69,21 @@ export const createApp = async (): Promise<express.Express> => {
   const env = getEnv();
   const protectedApiRouter = Router();
   const { adminRouter, rootPath } = await setupAdminJs();
+  const adminLoginRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      sendError(res, 'Too many admin login attempts', 429);
+    },
+  });
 
   if (env.NODE_ENV === 'production') {
     app.set('trust proxy', 1);
   }
+
+  app.disable('x-powered-by');
 
   app.use(
     cors({
@@ -84,7 +96,7 @@ export const createApp = async (): Promise<express.Express> => {
       contentSecurityPolicy: false,
     }),
   );
-  app.use(express.json());
+  app.use(express.json({ limit: '32kb' }));
   app.use(cookieParser());
   app.use(requestLogger);
   app.use(express.static(path.resolve(__dirname, '../public')));
@@ -103,6 +115,7 @@ export const createApp = async (): Promise<express.Express> => {
   protectedApiRouter.use('/admin-users', adminUsersRouter);
 
   app.use('/api', authMiddleware, protectedApiRouter);
+  app.use(`${rootPath}/login`, adminLoginRateLimiter);
   app.use(rootPath, adminRouter);
 
   app.use((_req: Request, res: Response) => {

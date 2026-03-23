@@ -211,6 +211,7 @@ export class SellerService {
         const response = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
           {
+            signal: AbortSignal.timeout(5_000),
             headers: {
               'User-Agent': 'ZatchAdminPortal/1.0',
             },

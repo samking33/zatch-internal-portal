@@ -7,20 +7,37 @@ import type {
   RefreshResponseData,
 } from '@zatch/shared';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const getApiUrl = (): string => {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    return 'http://localhost:4000';
+  }
+
+  throw new Error('NEXT_PUBLIC_API_URL is required in production');
+};
 
 const parseJson = async <T>(response: Response): Promise<T> => response.json() as Promise<T>;
 
-const buildCookieHeader = (): string => cookies().getAll().map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+const buildCookieHeader = async (): Promise<string> =>
+  (await cookies())
+    .getAll()
+    .map((cookie) => `${cookie.name}=${cookie.value}`)
+    .join('; ');
 
 export const refreshServerAccessToken = async (): Promise<string | null> => {
-  const cookieHeader = buildCookieHeader();
+  const apiUrl = getApiUrl();
+  const cookieHeader = await buildCookieHeader();
 
   if (!cookieHeader) {
     return null;
   }
 
-  const response = await fetch(`${API_URL}/api/auth/refresh`, {
+  const response = await fetch(`${apiUrl}/api/auth/refresh`, {
     method: 'POST',
     headers: {
       cookie: cookieHeader,
@@ -45,14 +62,15 @@ export const serverFetch = async <T>(
   path: string,
   init: RequestInit = {},
 ): Promise<ApiSuccessResponse<T>> => {
-  const cookieHeader = buildCookieHeader();
+  const apiUrl = getApiUrl();
+  const cookieHeader = await buildCookieHeader();
   const accessToken = await refreshServerAccessToken();
 
   if (!accessToken) {
     throw new Error('Unauthorized');
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${apiUrl}${path}`, {
     ...init,
     cache: 'no-store',
     headers: {
@@ -75,14 +93,15 @@ export const getServerSession = async (): Promise<{
   accessToken: string;
   user: IAdminUser;
 } | null> => {
-  const cookieHeader = buildCookieHeader();
+  const apiUrl = getApiUrl();
+  const cookieHeader = await buildCookieHeader();
   const accessToken = await refreshServerAccessToken();
 
   if (!accessToken) {
     return null;
   }
 
-  const response = await fetch(`${API_URL}/api/auth/me`, {
+  const response = await fetch(`${apiUrl}/api/auth/me`, {
     method: 'GET',
     cache: 'no-store',
     headers: {

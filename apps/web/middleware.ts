@@ -12,7 +12,7 @@ export const middleware = (request: NextRequest): NextResponse => {
   }
 
   const hasSessionCookie =
-    request.cookies.has('refreshToken') || request.cookies.has('zatch_portal_session');
+    request.cookies.has('refreshToken');
 
   if (hasSessionCookie) {
     return NextResponse.next();

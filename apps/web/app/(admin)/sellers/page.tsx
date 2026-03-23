@@ -8,12 +8,14 @@ import { SellerTable } from '../../../features/sellers/SellerTable';
 import { fetchSellerPage } from '../../../lib/admin-data';
 
 type SellersPageProps = {
-  searchParams: Record<string, string | string[] | undefined> | undefined;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 const SellersContent = async ({ searchParams }: SellersPageProps) => {
+  const resolvedSearchParams = (await searchParams) ?? {};
+
   const getValue = (key: string): string | undefined => {
-    const value = searchParams?.[key];
+    const value = resolvedSearchParams?.[key];
     if (Array.isArray(value)) {
       return value[0];
     }
@@ -59,43 +61,45 @@ const SellersContent = async ({ searchParams }: SellersPageProps) => {
   );
 };
 
-const SellersPage = ({ searchParams }: SellersPageProps) => (
-  <section>
-    <PageHeader
-      eyebrow="Seller Review"
-      title="Seller Boarding"
-      description="Review and action pending applications while keeping full visibility into already approved and rejected submissions."
-      actions={
-        <div className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800">
-          Pending queue
-        </div>
-      }
-    />
-    <Suspense
-      fallback={
-        <div className="space-y-5">
-          <div className="card-shell card-padding">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="skeleton h-10 rounded-lg" />
-              <div className="skeleton h-10 rounded-lg" />
-              <div className="skeleton h-10 rounded-lg" />
-              <div className="skeleton h-10 rounded-lg" />
+const SellersPage = ({ searchParams }: SellersPageProps) => {
+  return (
+    <section>
+      <PageHeader
+        eyebrow="Seller Review"
+        title="Seller Boarding"
+        description="Review and action pending applications while keeping full visibility into already approved and rejected submissions."
+        actions={
+          <div className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800">
+            Pending queue
+          </div>
+        }
+      />
+      <Suspense
+        fallback={
+          <div className="space-y-5">
+            <div className="card-shell card-padding">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="skeleton h-10 rounded-lg" />
+                <div className="skeleton h-10 rounded-lg" />
+                <div className="skeleton h-10 rounded-lg" />
+                <div className="skeleton h-10 rounded-lg" />
+              </div>
+              <div className="mt-4 flex gap-2">
+                {[1, 2, 3, 4].map((item) => (
+                  <div key={item} className="skeleton h-8 w-20 rounded-full" />
+                ))}
+              </div>
             </div>
-            <div className="mt-4 flex gap-2">
-              {[1, 2, 3, 4].map((item) => (
-                <div key={item} className="skeleton h-8 w-20 rounded-full" />
-              ))}
+            <div className="table-card">
+              <TableSkeleton columns={6} rows={5} />
             </div>
           </div>
-          <div className="table-card">
-            <TableSkeleton columns={6} rows={5} />
-          </div>
-        </div>
-      }
-    >
-      <SellersContent searchParams={searchParams} />
-    </Suspense>
-  </section>
-);
+        }
+      >
+        <SellersContent searchParams={searchParams} />
+      </Suspense>
+    </section>
+  );
+};
 
 export default SellersPage;

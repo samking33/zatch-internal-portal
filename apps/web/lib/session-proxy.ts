@@ -7,25 +7,29 @@ import type {
   RefreshResponseData,
 } from '@zatch/shared';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const REFRESH_COOKIE = 'refreshToken';
-const SESSION_COOKIE = 'zatch_portal_session';
 const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
 
 const parseJson = async <T>(response: Response): Promise<T> => response.json() as Promise<T>;
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const refreshCookieOptions = {
-  httpOnly: true,
-  secure: isProduction,
-  sameSite: 'lax' as const,
-  path: '/',
-  maxAge: SEVEN_DAYS_SECONDS,
+const getApiUrl = (): string => {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  if (!isProduction) {
+    return 'http://localhost:4000';
+  }
+
+  throw new Error('NEXT_PUBLIC_API_URL is required in production');
 };
 
-const sessionCookieOptions = {
-  httpOnly: false,
+const refreshCookieOptions = {
+  httpOnly: true,
   secure: isProduction,
   sameSite: 'lax' as const,
   path: '/',
@@ -43,8 +47,9 @@ const extractRefreshToken = (setCookieHeader: string | null): string | null => {
 
 export const createSessionLoginResponse = async (request: NextRequest): Promise<NextResponse> => {
   const body = (await request.json()) as { email?: string; password?: string };
+  const apiUrl = getApiUrl();
 
-  const upstream = await fetch(`${API_URL}/api/auth/login`, {
+  const upstream = await fetch(`${apiUrl}/api/auth/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -73,12 +78,12 @@ export const createSessionLoginResponse = async (request: NextRequest): Promise<
 
   const response = NextResponse.json(payload, { status: upstream.status });
   response.cookies.set(REFRESH_COOKIE, refreshToken, refreshCookieOptions);
-  response.cookies.set(SESSION_COOKIE, '1', sessionCookieOptions);
   return response;
 };
 
 export const createSessionRefreshResponse = async (request: NextRequest): Promise<NextResponse> => {
   const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
+  const apiUrl = getApiUrl();
 
   if (!refreshToken) {
     return NextResponse.json(
@@ -90,7 +95,7 @@ export const createSessionRefreshResponse = async (request: NextRequest): Promis
     );
   }
 
-  const upstream = await fetch(`${API_URL}/api/auth/refresh`, {
+  const upstream = await fetch(`${apiUrl}/api/auth/refresh`, {
     method: 'POST',
     headers: {
       cookie: `${REFRESH_COOKIE}=${refreshToken}`,
@@ -106,6 +111,7 @@ export const createSessionLogoutResponse = async (request: NextRequest): Promise
   const authorization = request.headers.get('authorization');
   const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
   const headers = new Headers();
+  const apiUrl = getApiUrl();
 
   if (authorization) {
     headers.set('authorization', authorization);
@@ -115,7 +121,7 @@ export const createSessionLogoutResponse = async (request: NextRequest): Promise
     headers.set('cookie', `${REFRESH_COOKIE}=${refreshToken}`);
   }
 
-  const upstream = await fetch(`${API_URL}/api/auth/logout`, {
+  const upstream = await fetch(`${apiUrl}/api/auth/logout`, {
     method: 'POST',
     headers,
     cache: 'no-store',
@@ -124,6 +130,5 @@ export const createSessionLogoutResponse = async (request: NextRequest): Promise
   const payload = await parseJson<ApiSuccessResponse<{ message: string }> | ApiErrorResponse>(upstream);
   const response = NextResponse.json(payload, { status: upstream.status });
   response.cookies.delete(REFRESH_COOKIE);
-  response.cookies.delete(SESSION_COOKIE);
   return response;
 };

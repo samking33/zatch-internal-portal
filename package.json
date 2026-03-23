@@ -16,5 +16,15 @@
     "turbo": "^2.5.0",
     "typescript": "^5.8.2"
   },
+  "overrides": {
+    "@adminjs/design-system": {
+      "@tiptap/extension-link": "2.27.2",
+      "@tinymce/tinymce-react": "6.3.0"
+    },
+    "@tinymce/tinymce-react": {
+      "tinymce": "7.9.2"
+    },
+    "tar": "7.5.12"
+  },
   "packageManager": "npm@11.6.2"
 }

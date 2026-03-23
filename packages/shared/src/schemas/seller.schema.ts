@@ -1,9 +1,20 @@
 import { z } from 'zod';
 
+const httpsUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      return new URL(value).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }, 'Document URL must use HTTPS');
+
 export const sellerDocumentSchema = z.object({
   type: z.enum(['pan', 'aadhaar', 'gst_certificate', 'other']),
-  url: z.string().url(),
-  publicId: z.string().min(1),
+  url: httpsUrlSchema,
+  publicId: z.string().min(1).max(200),
 });
 
 export const sellerLocationSchema = z.preprocess(
