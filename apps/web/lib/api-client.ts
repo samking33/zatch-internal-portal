@@ -10,6 +10,7 @@ import type {
 import { authStore } from '../store/auth.store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const SESSION_PROXY_URL = '';
 
 type ApiClientInit = RequestInit & {
   requireAuth?: boolean;
@@ -19,7 +20,7 @@ type ApiClientInit = RequestInit & {
 const parseJson = async <T>(response: Response): Promise<T> => response.json() as Promise<T>;
 
 const refreshAccessToken = async (): Promise<string | null> => {
-  const response = await fetch(`${API_URL}/api/auth/refresh`, {
+  const response = await fetch(`${SESSION_PROXY_URL}/api/session/refresh`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -90,7 +91,7 @@ export const apiClient = async <T>(
 };
 
 export const loginWithPassword = async (email: string, password: string) => {
-  const response = await fetch(`${API_URL}/api/auth/login`, {
+  const response = await fetch(`${SESSION_PROXY_URL}/api/session/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -106,6 +107,5 @@ export const loginWithPassword = async (email: string, password: string) => {
   }
 
   authStore.setAccessToken(payload.data.accessToken);
-  document.cookie = 'zatch_portal_session=1; path=/; SameSite=Strict';
   return payload.data;
 };

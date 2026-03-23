@@ -62,11 +62,14 @@ export const SessionProvider = ({
         }, 4000);
       },
       logout: async () => {
-        await apiClient<{ message: string }>('/api/auth/logout', {
+        await fetch('/api/session/logout', {
           method: 'POST',
+          credentials: 'include',
+          headers: {
+            Authorization: `Bearer ${authStore.getAccessToken() ?? initialAccessToken}`,
+          },
         });
         authStore.clearAccessToken();
-        document.cookie = 'zatch_portal_session=; Max-Age=0; path=/; SameSite=Strict';
         window.location.href = '/login';
       },
     }),
