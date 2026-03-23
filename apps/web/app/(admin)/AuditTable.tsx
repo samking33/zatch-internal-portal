@@ -196,7 +196,7 @@ export const AuditTable = ({ logs }: { logs: IAuditLog[] }) => {
         data={pagedLogs}
         getRowKey={(log) => log._id}
         title="Audit events"
-        description="Newest-first operational history across seller intake, review actions, and admin sessions."
+        description="Newest-first operational history across seller reviews, upstream decisions, and admin sessions."
         emptyState={
           <EmptyState
             title="No audit entries found"

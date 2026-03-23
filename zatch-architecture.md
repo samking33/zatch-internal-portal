@@ -1,745 +1,682 @@
-# Zatch Admin Portal — Full Architecture Specification
+# Zatch Internal Portal
 
-## Project Overview
+## Architecture Document
 
-An internal admin portal for Zatch to review and approve/reject seller onboarding requests. Built to be scalable — the seller boarding panel is the first dashboard; the architecture must support adding more dashboards (orders, disputes, etc.) with zero rework.
+### Revision
 
-Sellers apply via a **mobile app** built by a separate team. That mobile app posts seller data directly to a dedicated intake endpoint on this API, authenticated with an API key. No shared database, no shared codebase — clean separation.
+- **Document type:** Production implementation architecture
+- **System:** Zatch Internal Portal
+- **Scope covered:** Ops web portal, AdminJS portal, API, shared contracts, MongoDB, and deployment topology
+- **Status:** Reflects the codebase currently present in this repository
 
 ---
 
-## Tech Stack
+## 1. Executive Summary
 
-| Layer | Technology |
+Zatch Internal Portal is a production-oriented internal operations platform for seller onboarding review. It serves three distinct operator journeys:
+
+1. **Mobile intake ingestion** from an external mobile app using an API-key-protected endpoint
+2. **Ops workflow management** through a custom Next.js web portal for reviewing, approving, and rejecting sellers
+3. **Super-admin governance and analytics** through a customized AdminJS control plane mounted on the API service
+
+The platform is implemented as a TypeScript monorepo with clear separation between shared contracts, backend services, and operator-facing UIs. MongoDB Atlas is the system of record. Audit logging is immutable and approval decisions are committed atomically with status changes via MongoDB transactions.
+
+---
+
+## 2. Architecture Principles
+
+- **Single source of domain truth:** seller, audit, auth, and response contracts are centralized in `packages/shared`
+- **Strict trust boundaries:** mobile intake and admin access use separate authentication systems and separate route groups
+- **Operational traceability first:** all privileged actions generate audit records; audit logs are insert-only
+- **Server-driven admin experience:** the Next.js portal relies on Server Components and server-mediated session flows
+- **Role-aware control surfaces:** `ops_admin` and `super_admin` have different visibility and capabilities across the web portal and AdminJS
+- **Presentation and administration separated:** the Ops Portal is the primary workflow UI; AdminJS is the super-admin back office and analytics surface
+
+---
+
+## 3. System Context
+
+```mermaid
+flowchart LR
+    MobileApp["Seller Mobile App"] -->|"POST /intake/seller\nX-API-Key"| API["Express API"]
+    OpsUser["Ops Admin"] -->|"Login / Review / Action"| Web["Next.js Ops Portal"]
+    SuperAdmin["Super Admin"] -->|"Login / Governance / Analytics"| AdminJS["AdminJS Portal"]
+
+    Web -->|"JWT bearer + refresh cookie"| API
+    AdminJS -->|"Session auth via express-session"| API
+
+    API --> Mongo["MongoDB Atlas"]
+    API --> Sentry["Sentry"]
+    API --> Nominatim["OpenStreetMap Nominatim"]
+    MobileApp --> Cloudinary["Cloudinary"]
+    Cloudinary -. document URLs .-> API
+```
+
+### Responsibilities by actor
+
+| Actor | Primary interface | Purpose |
+|---|---|---|
+| Mobile app | Intake API | Submit new seller applications and document references |
+| Ops admin | Next.js web portal | Review queue, inspect seller detail, approve or reject |
+| Super admin | AdminJS | Governance, analytics, audit inspection, admin-user management, operational overrides |
+
+---
+
+## 4. Technology Stack
+
+| Layer | Implementation |
 |---|---|
-| Frontend | Next.js 14 (App Router) — deployed on Render (Static Site / Web Service) |
-| Backend API | Node.js + Express — deployed on Render (Web Service) |
-| Database | MongoDB Atlas (Mongoose ODM) |
-| Super Admin UI | AdminJS (mounted on Express at `/admin`) |
-| Monorepo | Turborepo with npm workspaces |
-| Validation | Zod (shared between API and web) |
-| Auth (admin) | Custom JWT (access token 15m + httpOnly refresh token 7d) |
-| Auth (mobile app) | API key / shared secret in `X-API-Key` request header |
-| File storage | Cloudinary (mobile app uploads docs directly; sends URLs here) |
-| Logging | Winston (structured JSON) |
+| Monorepo | npm workspaces + Turborepo |
+| Language | TypeScript (strict mode) |
+| Shared contracts | `@zatch/shared` |
+| Backend API | Express 4 + Mongoose 8 |
+| Web portal | Next.js 15 App Router + React 18 |
+| Web styling | Tailwind CSS + custom design tokens |
+| State management | Zustand for in-memory access token |
+| Admin portal | AdminJS 7 with custom pages/components |
+| Database | MongoDB Atlas |
+| Logging | Winston |
 | Error tracking | Sentry |
 | Password hashing | bcrypt |
+| Geocoding | Nominatim (OpenStreetMap) |
+| File storage contract | Cloudinary URLs provided by mobile app |
+| Deployment | Render Web Services |
 
 ---
 
-## Monorepo Structure
+## 5. Monorepo Structure
 
-```
+```text
 zatch-admin/
 ├── apps/
-│   ├── api/          # Node.js/Express — Render Web Service
-│   └── web/          # Next.js 14 — Render Web Service
+│   ├── api/                  # Express API + AdminJS
+│   └── web/                  # Next.js ops portal
 ├── packages/
-│   └── shared/       # Types, Zod schemas, utils — imported by both apps
-├── package.json      # workspaces: ["apps/*", "packages/*"]
-└── turbo.json        # Turborepo pipeline
+│   └── shared/               # shared schemas, DTOs, enums, utils
+├── package.json              # npm workspaces + turbo scripts
+├── turbo.json
+└── tsconfig.base.json
 ```
+
+### Workspace roles
+
+| Workspace | Purpose |
+|---|---|
+| `apps/api` | Backend HTTP API, AdminJS runtime, Mongo persistence, audit logging |
+| `apps/web` | Ops-facing internal portal |
+| `packages/shared` | Shared request/response contracts, enums, stats DTOs, Zod schemas, utilities |
 
 ---
 
-## packages/shared
+## 6. Shared Contracts Layer
 
-Shared between `apps/api` and `apps/web`. Never contains runtime logic — only types, schemas, and pure utilities.
+`packages/shared` is the contract boundary between all runtimes. It contains no framework-specific business logic.
 
-```
-packages/shared/src/
-├── types/
-│   ├── seller.types.ts      # ISeller, SellerStatus enum, ISellerDocument
-│   ├── audit.types.ts       # IAuditLog, AuditAction enum
-│   └── user.types.ts        # IAdminUser, Role enum
-├── schemas/
-│   ├── seller.schema.ts     # Zod: intake payload + approve/reject payload
-│   └── auth.schema.ts       # Zod: login request, token shape
-└── utils/
-    └── date.utils.ts        # Date formatting helpers, IST timezone
-```
+### Included artifacts
 
-### Types
+- Authentication schemas and payload contracts
+- Seller domain model and stats DTOs
+- Audit log types and action enums
+- Admin user types and role enum
+- Seller intake and status-update Zod schemas
+- Date utilities
+- Canonical India state list used by location-aware filtering
 
-```typescript
-// seller.types.ts
-export enum SellerStatus {
-  PENDING  = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-}
+### Key domain concepts
 
-export interface IStatusHistoryEntry {
-  status:    SellerStatus;
-  changedBy: string | null; // admin_users ObjectId ref — null for system actions
-  changedAt: Date;
-  note?:     string;
-}
-
-export interface ISellerDocument {
-  type:       'pan' | 'aadhaar' | 'gst_certificate' | 'other';
-  url:        string;      // Cloudinary URL — uploaded by mobile app before calling intake
-  publicId:   string;      // Cloudinary public_id — for deletion if needed
-  uploadedAt: Date;
-}
-
-export interface ISeller {
-  _id:               string;
-  sellerName:        string;
-  businessName:      string;
-  email:             string;
-  phone:             string;
-  gstOrEnrollmentId: string;
-  documents:         ISellerDocument[];
-  status:            SellerStatus;
-  source:            'mobile_app' | 'manual';
-  statusHistory:     IStatusHistoryEntry[];
-  receivedAt:        Date;
-  updatedAt:         Date;
-  metadata?:         Record<string, unknown>;
-}
-
-// audit.types.ts
-export enum AuditAction {
-  SELLER_SUBMITTED = 'seller.submitted',  // intake from mobile app
-  SELLER_APPROVED  = 'seller.approved',
-  SELLER_REJECTED  = 'seller.rejected',
-  USER_LOGIN       = 'user.login',
-  USER_LOGOUT      = 'user.logout',
-  ADMIN_OVERRIDE   = 'admin.override',
-}
-
-export interface IAuditLog {
-  _id:              string;
-  adminUserId?:     string;        // null/undefined for system-generated logs
-  adminUserEmail?:  string;        // denormalized — 'system' for intake logs
-  action:           AuditAction | string;
-  targetId:         string;
-  targetCollection: string;
-  note?:            string;
-  ipAddress?:       string;
-  metadata?:        Record<string, unknown>;
-  createdAt:        Date;
-}
-
-// user.types.ts
-export enum Role {
-  SUPER_ADMIN = 'super_admin',
-  OPS_ADMIN   = 'ops_admin',
-  VIEWER      = 'viewer',
-}
-
-export interface IAdminUser {
-  _id:         string;
-  email:       string;
-  name:        string;
-  role:        Role;
-  isActive:    boolean;
-  lastLoginAt?: Date;
-  createdAt:   Date;
-  updatedAt:   Date;
-}
-```
-
-### Zod Schemas
-
-```typescript
-// seller.schema.ts
-
-// Used by the mobile app intake endpoint — POST /intake/seller
-export const sellerIntakeSchema = z.object({
-  sellerName:        z.string().min(1).max(200).trim(),
-  businessName:      z.string().min(1).max(200).trim(),
-  email:             z.string().email().toLowerCase(),
-  phone:             z.string().min(10).max(15),
-  gstOrEnrollmentId: z.string().min(1).max(50).trim(),
-  documents: z.array(z.object({
-    type:     z.enum(['pan', 'aadhaar', 'gst_certificate', 'other']),
-    url:      z.string().url(),
-    publicId: z.string().min(1),
-  })).min(1, 'At least one document is required'),
-  metadata: z.record(z.unknown()).optional(),
-});
-
-// Used by admin PATCH /api/sellers/:id/status
-export const updateSellerStatusSchema = z.object({
-  action: z.enum(['approve', 'reject']),
-  note:   z.string().max(500).optional(),
-});
-
-// auth.schema.ts
-export const loginSchema = z.object({
-  email:    z.string().email(),
-  password: z.string().min(8),
-});
-```
+- `SellerStatus`: `pending`, `approved`, `rejected`
+- `Role`: `super_admin`, `ops_admin`, `viewer`
+- `ISellerLocation`: required seller address object with optional resolved coordinates
+- `PaginatedResult<T>`: shared list response envelope
+- `ApiSuccessResponse<T>` / `ApiErrorResponse`: shared API response shape
 
 ---
 
-## apps/api — Node.js/Express
+## 7. Backend Architecture
 
-### Folder Structure
+### 7.1 Service composition
 
-```
-apps/api/src/
-├── config/
-│   ├── db.ts                    # Mongoose connect with retry logic
-│   └── env.ts                   # Typed env vars parsed with Zod
-├── middleware/
-│   ├── auth.middleware.ts        # Verify JWT, attach req.user
-│   ├── apiKey.middleware.ts      # Verify X-API-Key for mobile app intake routes
-│   ├── rbac.middleware.ts        # Role guard factory: requireRole(Role.OPS_ADMIN)
-│   ├── validate.middleware.ts    # Zod schema → 400 errors
-│   └── logger.middleware.ts      # Winston request logging
-├── modules/
-│   ├── intake/                   # Mobile app entry point — separate from admin API
-│   │   └── intake.routes.ts      # POST /intake/seller
-│   ├── sellers/
-│   │   ├── seller.model.ts
-│   │   ├── seller.repository.ts
-│   │   ├── seller.service.ts
-│   │   └── seller.routes.ts
-│   ├── audit/
-│   │   ├── audit.model.ts
-│   │   ├── audit.repository.ts
-│   │   └── audit.service.ts
-│   ├── auth/
-│   │   ├── auth.model.ts
-│   │   ├── auth.service.ts
-│   │   └── auth.routes.ts
-│   └── admin-users/
-│       ├── admin-users.service.ts
-│       └── admin-users.routes.ts
-├── adminjs/
-│   ├── setup.ts
-│   └── resources.ts
-└── app.ts                        # Express setup, mount all routers
+The API is a layered Express application organized by module.
+
+```mermaid
+flowchart TD
+    App["app.ts"] --> Config["config/*"]
+    App --> Middleware["middleware/*"]
+    App --> Intake["modules/intake"]
+    App --> Auth["modules/auth"]
+    App --> Sellers["modules/sellers"]
+    App --> Audit["modules/audit"]
+    App --> AdminUsers["modules/admin-users"]
+    App --> AdminJs["adminjs/*"]
+
+    Sellers --> Audit
+    Auth --> Audit
+    AdminUsers --> Audit
 ```
 
-### Environment Variables (apps/api)
+### 7.2 Bootstrap and runtime behavior
 
-```env
-NODE_ENV=production
-PORT=4000
-MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>/<database>?appName=<app-name>
-JWT_ACCESS_SECRET=<secret>
-JWT_REFRESH_SECRET=<secret>
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
-SESSION_SECRET=<secret>
-CORS_ORIGIN=https://admin.zatch.in
-SENTRY_DSN=<dsn>
+At startup the API:
 
-# Shared with mobile app developer — keep secret
-MOBILE_API_KEY=<long-random-hex-string>
+- validates environment variables with Zod
+- initializes Sentry if configured
+- connects to MongoDB with retry and connection lifecycle logging
+- enables CORS with credentials
+- applies Helmet
+- serves static assets from `apps/api/public`
+- mounts intake routes, auth routes, protected API routes, and AdminJS
+- registers a structured error handler returning consistent JSON error envelopes
 
-# Cloudinary — for URL domain validation only (mobile app handles uploads)
-CLOUDINARY_CLOUD_NAME=<your-cloud-name>
-```
+### 7.3 Route segmentation
+
+| Route group | Auth mechanism | Audience |
+|---|---|---|
+| `/intake/*` | `X-API-Key` | Mobile app |
+| `/api/auth/*` | Public entrypoints + refresh cookie | Admin authentication |
+| `/api/*` | JWT bearer token | Web portal / privileged API consumers |
+| `/admin/*` | AdminJS session auth | Super admins only |
+
+### 7.4 Middleware stack
+
+| Middleware | Purpose |
+|---|---|
+| `requestLogger` | Winston request timing and status logging |
+| `validateRequest` | Zod-based request validation for body, params, and query |
+| `requireApiKey` | timing-safe `X-API-Key` verification |
+| `authMiddleware` | JWT bearer verification and `req.user` hydration |
+| `requireRole(...roles)` | role-based authorization |
+
+### 7.5 API modules
+
+#### Auth module
+
+- Supports `login`, `refresh`, `logout`, and `me`
+- Access tokens are short-lived JWTs returned in the response body
+- Refresh tokens are stored only in httpOnly cookies
+- Refresh token hashes are persisted in MongoDB
+- Login and logout both emit audit entries
+- `passwordHash` and `refreshTokenHash` are never serialized to clients
+
+#### Intake module
+
+- Dedicated mobile-facing endpoint: `POST /intake/seller`
+- Protected by API key and rate limited
+- Validates the shared seller intake schema
+- Rejects duplicate email and duplicate GST/enrollment identifiers
+- Creates sellers in `pending` state
+- Emits `seller.submitted` audit entries as a system action
+- Triggers asynchronous geocoding after persistence
+
+#### Sellers module
+
+- Read model for list and detail retrieval
+- Server-side filters for:
+  - status
+  - state
+  - city
+  - pincode
+  - submission date range
+- Aggregate stats endpoints for state, city, and pincode analytics
+- Approve and reject actions use a MongoDB session transaction
+- `statusHistory` is append-only
+
+#### Audit module
+
+- Stores immutable audit events in `audit_logs`
+- Provides list and per-target query routes
+- Powers both the web audit table and AdminJS timeline/dashboard views
+
+#### Admin users module
+
+- Super-admin-only management surface
+- Supports listing, create, role update, and activation state changes
+- Creates audit records for create and update operations
 
 ---
 
-## Mobile App Intake — Full Design
+## 8. Data Architecture
 
-### How it works
+### 8.1 Core collections
 
-```
-Seller fills form in mobile app
-        ↓
-Mobile app uploads each document to Cloudinary directly
-(gets back { url, public_id } per file)
-        ↓
-Mobile app POSTs to POST /intake/seller
-with form fields + document URLs
-        ↓
-Admin API verifies X-API-Key header
-        ↓
-Zod validates full payload
-        ↓
-Duplicate email / GST check → 409 if exists
-        ↓
-Seller document created: status = "pending", source = "mobile_app"
-        ↓
-Audit log written: action = "seller.submitted"
-        ↓
-201 response with { sellerId, status, receivedAt }
-        ↓
-Seller appears in admin portal pending list immediately
-```
-
-### Why Cloudinary URLs, not binary uploads
-
-The mobile app uploads files directly to Cloudinary using a signed upload preset (configured separately by the mobile team). It receives `{ url, public_id }` back from Cloudinary and includes those in the intake payload. The admin API never handles binary file data — it stores URLs only. This keeps the API stateless and fast.
-
-### apiKey.middleware.ts
-
-```typescript
-export const requireApiKey = (req: Request, res: Response, next: NextFunction) => {
-  const key = req.headers['x-api-key'];
-  if (!key || key !== env.MOBILE_API_KEY) {
-    return res.status(401).json({ success: false, error: 'Invalid or missing API key' });
-  }
-  next();
-};
-```
-
-### Intake route (intake.routes.ts)
-
-```
-POST /intake/seller
-Auth:         X-API-Key: <MOBILE_API_KEY>
-Rate limit:   20 requests / minute per IP
-Content-Type: application/json
-```
-
-**Request body:**
-```json
-{
-  "sellerName":        "Ravi Kumar",
-  "businessName":      "Ravi Traders",
-  "email":             "ravi@example.com",
-  "phone":             "9876543210",
-  "gstOrEnrollmentId": "29ABCDE1234F1Z5",
-  "documents": [
-    {
-      "type":     "pan",
-      "url":      "https://res.cloudinary.com/zatch/image/upload/v1/pan_ravi.jpg",
-      "publicId": "pan_ravi"
-    },
-    {
-      "type":     "aadhaar",
-      "url":      "https://res.cloudinary.com/zatch/image/upload/v1/aadhaar_ravi.jpg",
-      "publicId": "aadhaar_ravi"
+```mermaid
+classDiagram
+    class AdminUser {
+      ObjectId _id
+      string email
+      string name
+      string role
+      boolean isActive
+      string passwordHash
+      string refreshTokenHash
+      Date lastLoginAt
+      Date createdAt
+      Date updatedAt
     }
-  ]
-}
+
+    class Seller {
+      ObjectId _id
+      string sellerName
+      string businessName
+      string email
+      string phone
+      string gstOrEnrollmentId
+      string status
+      string source
+      Date receivedAt
+      Date createdAt
+      Date updatedAt
+    }
+
+    class SellerLocation {
+      string street
+      string city
+      string state
+      string pincode
+      number lat
+      number lng
+    }
+
+    class SellerDocument {
+      string type
+      string url
+      string publicId
+      Date uploadedAt
+    }
+
+    class StatusHistoryEntry {
+      string status
+      ObjectId changedBy
+      Date changedAt
+      string note
+    }
+
+    class AuditLog {
+      ObjectId _id
+      ObjectId adminUserId
+      string adminUserEmail
+      string action
+      ObjectId targetId
+      string targetCollection
+      string note
+      string ipAddress
+      object metadata
+      Date createdAt
+      Date updatedAt
+    }
+
+    Seller --> SellerLocation : contains
+    Seller --> SellerDocument : contains many
+    Seller --> StatusHistoryEntry : contains many
+    AuditLog --> AdminUser : optional actor
+    AuditLog --> Seller : optional target
 ```
 
-**Success (201):**
-```json
-{
-  "success": true,
-  "data": {
-    "sellerId":   "64f1a2b3c4d5e6f7a8b9c0d1",
-    "status":     "pending",
-    "receivedAt": "2024-01-15T10:30:00.000Z"
-  }
-}
+### 8.2 Seller persistence rules
+
+- Seller `location` is required
+- `statusHistory` is append-only
+- `receivedAt` is the business timestamp used for queueing and reporting
+- `metadata.location` is still supported as a legacy fallback during serialization
+
+### 8.3 Audit persistence rules
+
+- `audit_logs` is insert-only
+- model hooks block `findOneAndUpdate`, `updateOne`, and `updateMany`
+- no REST edit/delete routes exist for audit records
+
+### 8.4 Indexing strategy
+
+The seller collection is indexed for queue operations and location filtering:
+
+- `status + receivedAt`
+- `location.state`
+- `location.city`
+- `location.pincode`
+- `location.state + location.city`
+- `location.state + receivedAt`
+- `location.pincode + receivedAt`
+
+Audit logs are indexed by:
+
+- `targetId`
+- `targetCollection`
+- `action`
+- `adminUserId`
+- `createdAt`
+
+---
+
+## 9. Authentication and Authorization Model
+
+### 9.1 Separated auth systems
+
+```mermaid
+flowchart LR
+    Mobile["Mobile app"] -->|"X-API-Key"| Intake["/intake/*"]
+    AdminWeb["Ops web portal"] -->|"JWT bearer + refresh cookie"| Api["/api/*"]
+    SuperAdmin["AdminJS user"] -->|"express-session"| Admin["/admin/*"]
 ```
 
-**Errors:**
-| Status | When |
+These auth systems are intentionally isolated:
+
+- **Mobile intake does not accept JWTs**
+- **Protected admin API does not accept API keys**
+- **AdminJS does not use the JWT access-token flow**
+
+### 9.2 Role model
+
+| Role | Ops portal | Protected API | AdminJS |
+|---|---|---|---|
+| `super_admin` | Full access | Full access | Allowed |
+| `ops_admin` | Seller review and audit access | Allowed | Not allowed |
+| `viewer` | Limited by UI visibility and API role guards | Supported in model, restricted by route guards | Not allowed |
+
+### 9.3 Session model
+
+- Access token: JWT, returned in JSON, stored only in Zustand memory
+- Refresh token: httpOnly cookie, used for session continuation
+- AdminJS session: `express-session` backed by MongoDB via `connect-mongo`
+
+---
+
+## 10. Ops Web Portal Architecture
+
+### 10.1 Runtime model
+
+The web application is a server-rendered Next.js App Router application deployed as a web service, not a static export.
+
+### 10.2 App structure
+
+| Route area | Purpose |
 |---|---|
-| 400 | Zod validation failure — missing fields, bad email, etc. |
-| 401 | Missing or invalid X-API-Key |
-| 409 | Duplicate email or gstOrEnrollmentId already exists |
-| 429 | Rate limit exceeded |
+| `/login` | Public sign-in screen |
+| `/dashboard` | Queue analytics and location insights |
+| `/sellers` | Seller list, filters, and actions |
+| `/sellers/[id]` | Detailed review workspace |
+| `/audit` | Cross-module audit history |
+| `/admin-users` | Super-admin admin-user management |
 
-### SellerService.createFromIntake() logic
+### 10.3 Shell and layout
 
-1. Zod validate body with `sellerIntakeSchema` → 400 if invalid
-2. Check `Seller.exists({ email })` → 409 with message "Email already registered"
-3. Check `Seller.exists({ gstOrEnrollmentId })` → 409 with message "GST/Enrollment ID already registered"
-4. Create seller: `status: 'pending'`, `source: 'mobile_app'`, `receivedAt: new Date()`
-5. Push initial statusHistory entry: `{ status: 'pending', changedBy: null, changedAt: new Date() }`
-6. Save to MongoDB
-7. Call `AuditService.log({ action: 'seller.submitted', adminUserId: null, adminUserEmail: 'system', targetId: seller._id, targetCollection: 'sellers', metadata: { source: 'mobile_app', ip: req.ip } })`
-8. Return `{ sellerId: seller._id, status: 'pending', receivedAt: seller.receivedAt }`
+- global Inter font and shared metadata
+- protected admin layout validates session server-side
+- fixed admin shell with:
+  - role-aware sidebar
+  - topbar
+  - session provider
+  - toast notifications
 
----
+### 10.4 Data-fetching strategy
 
-## MongoDB Schemas
+The web portal uses a strict server/client split:
 
-### sellers collection
+- **Server Components**
+  - fetch initial page data
+  - validate session by refreshing access token server-side
+  - redirect unauthenticated users
+- **Client Components**
+  - handle search, filters, modals, toasts, and mutations
+  - call the API through a typed fetch wrapper
 
-```typescript
-const sellerDocumentSubSchema = new Schema({
-  type:       { type: String, enum: ['pan', 'aadhaar', 'gst_certificate', 'other'], required: true },
-  url:        { type: String, required: true },
-  publicId:   { type: String, required: true },
-  uploadedAt: { type: Date, default: Date.now },
-}, { _id: false });
+### 10.5 Session mediation
 
-const sellerSchema = new Schema({
-  sellerName:         { type: String, required: true, trim: true },
-  businessName:       { type: String, required: true, trim: true },
-  email:              { type: String, required: true, unique: true, lowercase: true },
-  phone:              { type: String, required: true },
-  gstOrEnrollmentId:  { type: String, required: true, unique: true, sparse: true },
-  documents:          [sellerDocumentSubSchema],
-  status:             { type: String, enum: Object.values(SellerStatus), default: SellerStatus.PENDING },
-  source:             { type: String, enum: ['mobile_app', 'manual'], default: 'mobile_app' },
-  statusHistory: [{
-    status:    { type: String, enum: Object.values(SellerStatus) },
-    changedBy: { type: Schema.Types.ObjectId, ref: 'AdminUser', default: null },
-    changedAt: { type: Date, default: Date.now },
-    note:      { type: String },
-  }],
-  receivedAt: { type: Date, required: true, default: Date.now },
-  metadata:   { type: Schema.Types.Mixed },
-}, { timestamps: true });
+The web portal does not mint refresh cookies directly in browser code. Instead it exposes internal Next route handlers:
 
-// Primary query index — pending sellers sorted by date received
-sellerSchema.index({ status: 1, receivedAt: -1 });
-sellerSchema.index({ email: 1 }, { unique: true });
-sellerSchema.index({ gstOrEnrollmentId: 1 }, { unique: true, sparse: true });
-```
+- `/api/session/login`
+- `/api/session/refresh`
+- `/api/session/logout`
 
-### audit_logs collection
+These route handlers proxy authentication to the API and manage cookie forwarding in a controlled way.
 
-```typescript
-const auditLogSchema = new Schema({
-  adminUserId:       { type: Schema.Types.ObjectId, ref: 'AdminUser', default: null },
-  adminUserEmail:    { type: String, default: 'system' },
-  action:            { type: String, required: true },
-  targetId:          { type: Schema.Types.ObjectId, required: true },
-  targetCollection:  { type: String, required: true },
-  note:              { type: String },
-  ipAddress:         { type: String },
-  metadata:          { type: Schema.Types.Mixed },
-}, { timestamps: true });
+### 10.6 State management
 
-// Immutability enforced at model level
-auditLogSchema.pre('findOneAndUpdate', function() { throw new Error('audit_logs are immutable'); });
-auditLogSchema.pre('updateOne',        function() { throw new Error('audit_logs are immutable'); });
-auditLogSchema.pre('updateMany',       function() { throw new Error('audit_logs are immutable'); });
-
-auditLogSchema.index({ targetId: 1 });
-auditLogSchema.index({ targetCollection: 1 });
-auditLogSchema.index({ action: 1 });
-auditLogSchema.index({ adminUserId: 1 });
-auditLogSchema.index({ createdAt: -1 });
-```
-
-### admin_users collection
-
-```typescript
-const adminUserSchema = new Schema({
-  email:            { type: String, required: true, unique: true, lowercase: true },
-  name:             { type: String, required: true },
-  passwordHash:     { type: String, required: true },
-  refreshTokenHash: { type: String, default: null },
-  role:             { type: String, enum: Object.values(Role), default: Role.OPS_ADMIN },
-  isActive:         { type: Boolean, default: true },
-  lastLoginAt:      { type: Date },
-}, { timestamps: true });
-
-adminUserSchema.set('toJSON', {
-  transform: (_, ret) => {
-    delete ret.passwordHash;
-    delete ret.refreshTokenHash;
-    return ret;
-  }
-});
-```
+- Zustand stores the access token in memory only
+- React context provides current user, logout behavior, and toast state
+- filters and modal state are component-local
 
 ---
 
-## All API Routes
+## 11. AdminJS Architecture
 
-### Intake (mobile app only — API key auth)
+AdminJS is not used as a stock CRUD scaffold. It is a customized super-admin surface running inside the API service.
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| POST | /intake/seller | X-API-Key header | Mobile app submits seller form + Cloudinary doc URLs |
+### 11.1 Access model
 
-### Auth (admin users — JWT)
+- Mounted under `/admin`
+- Authenticates against the same `admin_users` collection
+- Only `super_admin` accounts can sign in
+- Uses session auth rather than JWT
 
-| Method | Path | Role | Description |
-|---|---|---|---|
-| POST | /api/auth/login | public | Email + password → accessToken + httpOnly cookie |
-| POST | /api/auth/refresh | public | Cookie → new accessToken |
-| POST | /api/auth/logout | any-auth | Null refreshTokenHash + clear cookie |
-| GET | /api/auth/me | any-auth | Current user info |
+### 11.2 Custom pages
 
-### Sellers (admin UI)
-
-| Method | Path | Role | Description |
-|---|---|---|---|
-| GET | /api/sellers | ops_admin+ | Pending sellers list. Query: page, limit, sortBy |
-| GET | /api/sellers/:id | ops_admin+ | Single seller + documents + statusHistory |
-| PATCH | /api/sellers/:id/status | ops_admin+ | Approve or reject. Atomic + audit log |
-
-### Audit
-
-| Method | Path | Role | Description |
-|---|---|---|---|
-| GET | /api/audit | ops_admin+ | Filter by collection, user, date range |
-| GET | /api/audit/:targetId | ops_admin+ | All logs for one entity |
-
-### Admin Users
-
-| Method | Path | Role | Description |
-|---|---|---|---|
-| GET | /api/admin-users | super_admin | List all accounts |
-| POST | /api/admin-users | super_admin | Create ops account |
-| PATCH | /api/admin-users/:id | super_admin | Update role / isActive |
-
-### Health
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | /api/health | public | { status: "ok", db: "connected" } |
-
----
-
-## Auth Flow Details
-
-### Login (POST /api/auth/login)
-
-1. Zod validate → 400
-2. Find user by email → 401 if not found
-3. bcrypt.compare password → 401 if mismatch
-4. isActive check → 403 if deactivated
-5. Sign accessToken (JWT 15m, payload: { userId, email, role })
-6. Sign refreshToken (JWT 7d)
-7. Hash refreshToken, save to user.refreshTokenHash
-8. Set refreshToken in httpOnly + sameSite=strict cookie
-9. Return { accessToken, user } in body
-10. AuditService.log USER_LOGIN
-11. Update lastLoginAt
-
-### Token Refresh (POST /api/auth/refresh)
-
-1. Read cookie → 401 if missing
-2. Verify JWT → 401 if expired/invalid
-3. bcrypt.compare against stored hash → 401 if mismatch
-4. Issue new accessToken (15m)
-5. Return { accessToken }
-
-### Approve/Reject (PATCH /api/sellers/:id/status)
-
-1. auth.middleware — verify JWT → 401
-2. rbac.middleware — ops_admin+ → 403
-3. validate.middleware — Zod body → 400
-4. SellerService.updateStatus():
-   - Fetch seller → 404 if not found
-   - status === 'pending' check → 409 if already actioned
-   - Open Mongoose session (transaction)
-   - Update seller.status
-   - $push to seller.statusHistory (changedBy = req.user._id)
-   - Commit → 500 + rollback on failure
-5. AuditService.log SELLER_APPROVED or SELLER_REJECTED
-6. Return { success: true, seller }
-
-### Middleware chains
-
-```
-Intake:       POST /intake/seller → requireApiKey → validate(sellerIntakeSchema) → handler
-Admin routes: /api/* → auth.middleware → rbac.middleware → validate → handler
-```
-
----
-
-## What to hand to the mobile app developer
-
-```
-=== Zatch Seller Intake API — Integration Guide ===
-
-Endpoint:     POST https://api.zatch.in/intake/seller
-Header:       X-API-Key: <value of MOBILE_API_KEY from env>
-Content-Type: application/json
-
-Step 1 — Upload documents to Cloudinary first
-  Upload each document file to Cloudinary using your upload preset.
-  Store the returned { secure_url, public_id } for each file.
-  Do NOT send binary files to this endpoint.
-
-Step 2 — POST the seller payload
-
-Required fields:
-  sellerName          string   (1–200 chars)
-  businessName        string   (1–200 chars)
-  email               string   (valid email — must be unique)
-  phone               string   (10–15 digits)
-  gstOrEnrollmentId   string   (must be unique)
-  location            object   (required)
-    street            string   (full street address)
-    city              string   (city name)
-    state             string   (must exactly match one of the 36 Indian states/UTs)
-    pincode           string   (exactly 6 digits)
-  documents           array    (min 1 item)
-    type              "pan" | "aadhaar" | "gst_certificate" | "other"
-    url               string   (Cloudinary secure_url)
-    publicId          string   (Cloudinary public_id)
-
-400 errors returned if:
-  - location object missing entirely
-  - any location sub-field missing
-  - pincode not exactly 6 digits
-
-Responses:
-  201  { success: true, data: { sellerId, status: "pending", receivedAt } }
-  400  { success: false, error: "...", details: [...] }   ← validation error
-  401  { success: false, error: "Invalid or missing API key" }
-  409  { success: false, error: "Email already registered" }
-  409  { success: false, error: "GST/Enrollment ID already registered" }
-  429  { success: false, error: "Too many requests" }
-```
-
----
-
-## apps/web — Next.js 14
-
-### Folder Structure
-
-```
-apps/web/
-├── app/
-│   ├── (auth)/login/page.tsx
-│   └── (admin)/
-│       ├── layout.tsx
-│       ├── sellers/
-│       │   ├── page.tsx
-│       │   └── [id]/page.tsx
-│       └── audit/page.tsx
-├── components/
-│   ├── DataTable.tsx
-│   ├── ConfirmModal.tsx
-│   ├── StatusBadge.tsx
-│   ├── PageHeader.tsx
-│   ├── EmptyState.tsx
-│   └── ErrorBoundary.tsx
-├── features/
-│   └── sellers/
-│       ├── SellerTable.tsx
-│       ├── SellerActionModal.tsx
-│       ├── SellerDetail.tsx
-│       ├── DocumentsPanel.tsx     # Renders Cloudinary doc thumbnails, read-only
-│       └── StatusTimeline.tsx
-├── lib/
-│   ├── api-client.ts             # Typed fetch + auto 401→refresh→retry
-│   ├── server-fetch.ts
-│   ├── nav-config.ts
-│   └── hooks/useSession.ts
-├── store/auth.store.ts            # Zustand — accessToken in memory only
-└── middleware.ts                  # Edge auth guard
-```
-
-### DocumentsPanel.tsx (new component)
-
-Client component. Receives `documents: ISellerDocument[]` as prop.
-- Renders each doc as a card: type label + thumbnail image
-- Clicking a thumbnail opens the Cloudinary URL in a new tab
-- No upload or delete functionality — admin is read-only
-- Shows upload date under each thumbnail
-
-### Server vs Client Component rules
-
-- `page.tsx` → always SC, fetch data server-side
-- Forms, modals, onClick, useState → CC with `"use client"`
-- Wrap tables in `<Suspense fallback={<TableSkeleton />}>` for streaming
-
----
-
-## AdminJS Integration
-
-### Role
-
-Super_admin escape hatch — raw DB access, emergency corrections, user management. Ops team never uses this. Mounted at `/admin` on the API server.
-
-### Packages
-
-```
-adminjs  @adminjs/express  @adminjs/mongoose  express-session  connect-mongo
-```
-
-### authenticate() — reuses admin_users collection
-
-```typescript
-authenticate: async (email, password) => {
-  const user = await AdminUser.findOne({ email, isActive: true });
-  if (!user) return null;
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) return null;
-  if (![Role.SUPER_ADMIN, Role.OPS_ADMIN].includes(user.role)) return null;
-  return { email: user.email, role: user.role, id: user._id.toString() };
-}
-```
-
-### Resources
-
-**sellers** — super_admin: full CRUD. ops_admin: list + show only. Documents field shown as clickable URLs. Custom action "Force status change" (super_admin only) → writes `admin.override` audit log.
-
-**audit_logs** — both roles: list + show + filter only. `{ new: false, edit: false, delete: false, bulkDelete: false }`. Bulk "Export CSV" for super_admin.
-
-**admin_users** — super_admin only. Hidden: passwordHash, refreshTokenHash. Custom "Deactivate" action → isActive: false, nulls refreshTokenHash (kills sessions immediately).
-
----
-
-## Deployment
-
-Both services deploy on **Render** from the same monorepo. Create two separate Render services pointing at different root directories.
-
-### Render — Web Service: apps/api (Node.js API)
-
-| Setting | Value |
+| Page | Purpose |
 |---|---|
-| Service type | Web Service |
-| Root directory | `apps/api` |
-| Build command | `npm install && npm run build` |
-| Start command | `npm run start` |
-| Health check path | `/api/health` |
-| Auto-deploy | Yes — on push to main |
+| `Home` | Dashboard entrypoint |
+| `Seller Map` | Geospatial seller visualization and filtering |
+| `Analytics` | Aggregate seller and operational analytics |
+| `Audit Timeline` | Visualized audit event chronology |
 
-Environment variables: all vars listed in the `apps/api` env section above.
+### 11.3 Resource governance
 
-Add a Render health check on `/api/health` — Render will restart the service automatically if it goes down.
+| Resource | Navigation | Key constraints |
+|---|---|---|
+| `Seller` | Operations | super-admin CRUD, custom force-status action |
+| `AuditLog` | Operations | read-only, export CSV, newest first |
+| `AdminUser` | Administration | hidden secrets, super-admin-only access, deactivate action |
 
-### Render — Web Service: apps/web (Next.js)
+### 11.4 AdminJS-specific customization
 
-| Setting | Value |
-|---|---|
-| Service type | Web Service |
-| Root directory | `apps/web` |
-| Build command | `npm install && npm run build` |
-| Start command | `npm run start` |
-| Auto-deploy | Yes — on push to main |
+- custom branding and sidebar components
+- custom dashboard data handlers
+- map and analytics pages backed directly by MongoDB queries
+- express-session stored in MongoDB
+- shared branding assets served from `apps/api/public`
 
-Environment variables:
+---
 
-```env
-NEXT_PUBLIC_API_URL=https://your-api-service.onrender.com
+## 12. Runtime Flows
+
+### 12.1 Mobile intake flow
+
+```mermaid
+sequenceDiagram
+    participant M as Mobile App
+    participant C as Cloudinary
+    participant A as API
+    participant DB as MongoDB
+    participant G as Nominatim
+
+    M->>C: Upload seller documents
+    C-->>M: HTTPS document URLs + public IDs
+    M->>A: POST /intake/seller + X-API-Key
+    A->>A: Validate API key and Zod schema
+    A->>DB: Check duplicate email / GST
+    A->>DB: Insert seller (pending)
+    A->>DB: Insert audit log (seller.submitted)
+    A-->>M: 201 Created
+    A->>G: Async geocode seller address
+    G-->>A: lat/lng
+    A->>DB: Update seller location coordinates
 ```
 
-Note: Next.js on Render runs as a Node.js Web Service (not a static site) because it uses server components and server-side rendering. Do not deploy as a Static Site.
+### 12.2 Ops admin login and session flow
 
-### Render — Free tier warning
+```mermaid
+sequenceDiagram
+    participant U as Ops Admin Browser
+    participant W as Next.js Web
+    participant A as API
+    participant DB as MongoDB
 
-Render free tier services spin down after 15 minutes of inactivity. For production, use at minimum the **Starter** plan ($7/month per service) to keep both services always-on.
+    U->>W: Submit credentials
+    W->>W: POST /api/session/login
+    W->>A: POST /api/auth/login
+    A->>DB: Verify user + update refreshTokenHash
+    A->>DB: Insert user.login audit
+    A-->>W: accessToken + refreshToken cookie
+    W-->>U: Session established
 
-### MongoDB Atlas
-- M10+ replica set (required for Mongoose transactions)
-- IP allowlist: add Render's outbound IP ranges, or set to 0.0.0.0/0 for initial setup then tighten
-- Collections: sellers, audit_logs, admin_users
+    U->>W: Request protected route
+    W->>A: POST /api/auth/refresh (server-side)
+    A-->>W: New accessToken
+    W->>A: Protected API call with bearer token
+    A-->>W: Data
+    W-->>U: Rendered page
+```
+
+### 12.3 Seller approve / reject flow
+
+```mermaid
+sequenceDiagram
+    participant U as Ops Admin
+    participant W as Ops Portal
+    participant A as API
+    participant DB as MongoDB
+
+    U->>W: Approve or reject seller
+    W->>A: PATCH /api/sellers/:id/status
+    A->>DB: Read seller status
+    A->>DB: Start Mongo session
+    A->>DB: Update seller status + push statusHistory
+    A->>DB: Insert audit log
+    A->>DB: Commit transaction
+    A-->>W: Updated seller response
+    W-->>U: UI refresh + toast + queue update
+```
 
 ---
 
-## Scalability Rules
+## 13. API Surface
 
-1. New dashboard = one module in `modules/` + one page in `app/(admin)/` — nothing else changes
-2. `audit_logs` insert-only — Mongoose pre-hooks block all mutations
-3. `statusHistory` append-only — always `$push`, never `$set`
-4. `metadata: Mixed` absorbs future fields with zero migration
-5. RBAC is a factory — `requireRole(Role.OPS_ADMIN)` one line per route
-6. `nav-config.ts` drives sidebar — one array push per new dashboard
-7. `DataTable` column-config driven — every table reuses it
-8. `AuditService.log()` stateless — callable from any service or AdminJS action
-9. Intake endpoint is isolated in its own module — mobile app integration never touches admin API internals
+### Public and authentication routes
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/intake/seller` | Mobile seller intake |
+| `POST` | `/api/auth/login` | Admin login |
+| `POST` | `/api/auth/refresh` | Access token renewal |
+| `POST` | `/api/auth/logout` | Logout |
+| `GET` | `/api/health` | Health and DB connectivity |
+
+### Protected authentication routes
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/auth/me` | Current admin profile |
+
+### Protected seller routes
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/sellers` | Filtered paginated seller list |
+| `GET` | `/api/sellers/:id` | Seller detail |
+| `PATCH` | `/api/sellers/:id/status` | Approve / reject |
+| `GET` | `/api/sellers/stats/by-state` | State-level aggregation |
+| `GET` | `/api/sellers/stats/by-city` | City-level aggregation |
+| `GET` | `/api/sellers/stats/by-pincode` | Pincode-level aggregation |
+
+### Protected audit and admin-user routes
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/audit` | Paginated audit history |
+| `GET` | `/api/audit/:targetId` | Audit history for a target entity |
+| `GET` | `/api/admin-users` | Paginated admin-user list |
+| `POST` | `/api/admin-users` | Create admin user |
+| `PATCH` | `/api/admin-users/:id` | Update role or activation state |
 
 ---
 
-## MVP Acceptance Criteria
+## 14. Security and Reliability Controls
 
-- [ ] Mobile app POSTs to `/intake/seller` with API key → seller appears in pending list immediately
-- [ ] Duplicate email returns 409 "Email already registered"
-- [ ] Duplicate GST/Enrollment ID returns 409 "GST/Enrollment ID already registered"
-- [ ] Pending list shows: Name, Business, GST/Enrollment ID, Phone, Email, Date Received, Time Received, Status, Actions
-- [ ] Seller detail page shows all fields + document thumbnails (Cloudinary URLs, click to open)
-- [ ] Approved/Rejected sellers do NOT appear in pending list
-- [ ] Approve requires confirmation → seller removed from list → audit log written
-- [ ] Reject requires confirmation + optional note → removed from list → audit log written
-- [ ] Each seller actioned only once — 409 on second attempt
-- [ ] Every action logged with actor + timestamp in audit_logs
-- [ ] AdminJS at `/admin` — super_admin login only
-- [ ] `/api/health` returns 200
+### 14.1 Security controls
+
+- environment validation blocks weak secrets and placeholder values
+- API key comparison uses timing-safe equality
+- auth and AdminJS login endpoints are rate limited
+- secure cookie configuration in production
+- trusted-origin enforcement on cookie-bound auth actions
+- `x-powered-by` disabled
+- Helmet enabled
+- `passwordHash` and `refreshTokenHash` suppressed from serialized output
+- document intake URLs must use HTTPS
+
+### 14.2 Data integrity controls
+
+- seller approve/reject paths run inside MongoDB transactions
+- audit logging is immutable
+- status changes append to `statusHistory`; they do not rewrite the history array
+- duplicate seller creation is guarded at both service and database layers
+
+### 14.3 Observability controls
+
+- Winston structured JSON logging
+- request duration logging
+- Sentry integration for exception capture
+- health endpoint with database readiness signal
+
+---
+
+## 15. Deployment Topology
+
+```mermaid
+flowchart TD
+    Repo["GitHub Repository"] --> RenderWeb["Render Web Service\nNext.js Ops Portal"]
+    Repo --> RenderApi["Render Web Service\nExpress API + AdminJS"]
+
+    RenderWeb --> RenderApi
+    RenderApi --> Atlas["MongoDB Atlas"]
+    RenderApi --> Public["Static assets from apps/api/public"]
+    RenderApi --> Nominatim["Nominatim geocoding"]
+    Mobile["Mobile App"] --> RenderApi
+```
+
+### Runtime deployment model
+
+| Service | Deployment target | Responsibility |
+|---|---|---|
+| Web portal | Render Web Service | Next.js server runtime, route handlers, Server Components |
+| API + AdminJS | Render Web Service | Express API, AdminJS, sessions, DB access |
+| Database | MongoDB Atlas | seller, audit, and admin-user persistence |
+
+### Important deployment characteristics
+
+- the web portal depends on server runtime features and is not a static site
+- Render deployments are environment-driven
+- the API service and web service are deployed independently
+- cross-subdomain cookie behavior is supported through `COOKIE_DOMAIN`
+
+---
+
+## 16. Extensibility
+
+The platform already has the architectural seams needed to expand beyond seller onboarding:
+
+- modular API domains under `apps/api/src/modules`
+- shared DTOs and schemas under `packages/shared`
+- a reusable admin shell and navigation model in the web portal
+- AdminJS custom pages for analytics and governance use cases
+- location-aware stats endpoints that can support broader operational reporting
+
+Future internal dashboards such as orders, disputes, payouts, or compliance review can follow the same pattern:
+
+1. add a shared contract
+2. add a repository/service/route module
+3. expose server-side page data in the web portal
+4. optionally surface super-admin governance in AdminJS
+
+---
+
+## 17. Implementation Snapshot
+
+This repository currently implements:
+
+- a live mobile intake boundary
+- a custom ops review portal
+- a role-governed AdminJS super-admin surface
+- immutable audit logging
+- location-aware seller filtering and mapping
+- server-side session mediation between Next.js and the API
+- production deployment targets for web and API services
+
+In practical terms, this is not a starter spec anymore. It is an implemented internal platform with a clear separation of concerns, auditable operational flows, and an architecture suitable for formal internal presentation.

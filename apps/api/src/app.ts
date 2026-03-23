@@ -18,7 +18,6 @@ import { logger, requestLogger } from './middleware/logger.middleware';
 import { adminUsersRouter } from './modules/admin-users/admin-users.routes';
 import { auditRouter } from './modules/audit/audit.routes';
 import { authRouter } from './modules/auth/auth.routes';
-import { intakeRouter } from './modules/intake/intake.routes';
 import { sellerRouter } from './modules/sellers/seller.routes';
 
 const initializeSentry = (): void => {
@@ -101,7 +100,6 @@ export const createApp = async (): Promise<express.Express> => {
   app.use(requestLogger);
   app.use(express.static(path.resolve(__dirname, '../public')));
 
-  app.use('/intake', intakeRouter);
   app.use('/api/auth', authRouter);
   app.get('/api/health', (_req: Request, res: Response) => {
     sendSuccess(res, {

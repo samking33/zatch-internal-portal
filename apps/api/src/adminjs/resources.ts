@@ -1,13 +1,9 @@
-import mongoose from 'mongoose';
-import { z } from 'zod';
-
-import { Role, SellerStatus } from '@zatch/shared';
+import { Role } from '@zatch/shared';
 
 import { AppError } from '../lib/app-error';
 import { auditService } from '../modules/audit/audit.service';
 import { AuditLog } from '../modules/audit/audit.model';
 import { AdminUser } from '../modules/auth/auth.model';
-import { Seller } from '../modules/sellers/seller.model';
 
 type AdminJsCurrentAdmin = {
   id: string;
@@ -35,11 +31,6 @@ type AdminJsResponse = {
   setHeader: (name: string, value: string) => void;
   send: (body: string) => void;
 };
-
-const forceStatusSchema = z.object({
-  status: z.nativeEnum(SellerStatus),
-  note: z.string().max(500).optional(),
-});
 
 const isSuperAdmin = (currentAdmin?: AdminJsCurrentAdmin): boolean =>
   currentAdmin?.role === Role.SUPER_ADMIN;
@@ -69,89 +60,6 @@ const buildCsv = (records: AdminJsRecord[]): string => {
   );
 
   return [header.join(','), ...rows].join('\n');
-};
-
-const forceStatusChange = {
-  actionType: 'record',
-  icon: 'Settings',
-  guard: 'Force this seller status change?',
-  isAccessible: ({ currentAdmin }: AdminJsActionContext) => isSuperAdmin(currentAdmin),
-  isVisible: ({ currentAdmin }: AdminJsActionContext) => isSuperAdmin(currentAdmin),
-  handler: async (
-    request: AdminJsRequest,
-    _response: unknown,
-    context: AdminJsActionContext,
-  ) => {
-    if (!context.currentAdmin || !context.record) {
-      throw new AppError(401, 'Unauthorized');
-    }
-
-    if (request.method !== 'post') {
-      return {
-        record: context.record,
-      };
-    }
-
-    const payload = forceStatusSchema.parse(request.payload ?? {});
-    const sellerId = String(context.record.params._id);
-    const session = await mongoose.startSession();
-
-    try {
-      session.startTransaction();
-
-      const seller = await Seller.findByIdAndUpdate(
-        sellerId,
-        {
-          $set: { status: payload.status },
-          $push: {
-            statusHistory: {
-              status: payload.status,
-              changedBy: context.currentAdmin.id,
-              changedAt: new Date(),
-              ...(payload.note ? { note: payload.note } : {}),
-            },
-          },
-        },
-        {
-          new: true,
-          session,
-        },
-      ).exec();
-
-      if (!seller) {
-        throw new AppError(404, 'Seller not found');
-      }
-
-      await auditService.log({
-        action: 'admin.override',
-        adminUserId: context.currentAdmin.id,
-        adminUserEmail: context.currentAdmin.email,
-        targetId: seller._id.toString(),
-        targetCollection: 'sellers',
-        ...(payload.note ? { note: payload.note } : {}),
-        metadata: {
-          source: 'adminjs',
-          nextStatus: payload.status,
-        },
-        session,
-      });
-
-      await session.commitTransaction();
-
-      return {
-        record: context.record.toJSON ? context.record.toJSON(context.currentAdmin) : context.record,
-        notice: {
-          message: 'Seller status updated',
-          type: 'success',
-        },
-      };
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      await session.endSession();
-    }
-  },
 };
 
 const deactivateUser = {
@@ -220,32 +128,6 @@ const exportCsv = {
 };
 
 export const createAdminJsResources = () => [
-  {
-    resource: Seller,
-    options: {
-      navigation: { name: 'Operations', icon: 'Store' },
-      properties: {
-        documents: {
-          isVisible: { list: false, show: true, edit: true, filter: false },
-        },
-      },
-      actions: {
-        new: {
-          isAccessible: ({ currentAdmin }: AdminJsActionContext) => isSuperAdmin(currentAdmin),
-        },
-        edit: {
-          isAccessible: ({ currentAdmin }: AdminJsActionContext) => isSuperAdmin(currentAdmin),
-        },
-        delete: {
-          isAccessible: ({ currentAdmin }: AdminJsActionContext) => isSuperAdmin(currentAdmin),
-        },
-        bulkDelete: {
-          isAccessible: ({ currentAdmin }: AdminJsActionContext) => isSuperAdmin(currentAdmin),
-        },
-        forceStatusChange,
-      },
-    },
-  },
   {
     resource: AuditLog,
     options: {

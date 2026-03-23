@@ -7,13 +7,13 @@ import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import { Types } from 'mongoose';
 
-import { Role, SellerStatus } from '@zatch/shared';
+import { Role, SellerStatus, type ISeller } from '@zatch/shared';
 
 import { getEnv } from '../config/env';
 import { logger } from '../middleware/logger.middleware';
 import { AuditLog } from '../modules/audit/audit.model';
 import { AdminUser } from '../modules/auth/auth.model';
-import { Seller } from '../modules/sellers/seller.model';
+import { UpstreamSellerClient } from '../modules/sellers/upstream-seller.client';
 import { createAdminJsComponents } from './components';
 import { createAdminJsResources } from './resources';
 import type {
@@ -76,35 +76,6 @@ type PageContext = {
   currentAdmin?: AdminJsCurrentAdmin;
 };
 
-type SellerQueryDocument = {
-  _id: Types.ObjectId;
-  sellerName: string;
-  businessName: string;
-  gstOrEnrollmentId: string;
-  status: SellerStatus;
-  receivedAt: Date;
-  location?: {
-    street: string;
-    city: string;
-    state: string;
-    pincode: string;
-    lat: number | null;
-    lng: number | null;
-  };
-  statusHistory: Array<{
-    status: SellerStatus;
-    changedAt: Date;
-    note?: string;
-  }>;
-  metadata?: unknown;
-};
-
-type SellerNameDocument = {
-  _id: Types.ObjectId;
-  sellerName: string;
-  businessName: string;
-};
-
 type AuditQueryDocument = {
   _id: Types.ObjectId;
   action: string;
@@ -117,6 +88,7 @@ type AuditQueryDocument = {
 };
 
 let cachedAdminRouter: AdminJsSetupResult | null = null;
+const adminSellerClient = new UpstreamSellerClient();
 
 const theme = {
   colors: {
@@ -151,9 +123,6 @@ const theme = {
 const runtimeImport = <T>(modulePath: string): Promise<T> =>
   Function('modulePath', 'return import(modulePath)')(modulePath) as Promise<T>;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 const getGreeting = (): string => {
   const hour = new Date().getHours();
 
@@ -176,50 +145,26 @@ const formatDateLabel = (): string =>
     year: 'numeric',
   }).format(new Date());
 
-const buildStatusCounts = (sellers: SellerQueryDocument[]): StatusCounts => ({
+const buildStatusCounts = (sellers: ISeller[]): StatusCounts => ({
   total: sellers.length,
   pending: sellers.filter((seller) => seller.status === SellerStatus.PENDING).length,
   approved: sellers.filter((seller) => seller.status === SellerStatus.APPROVED).length,
   rejected: sellers.filter((seller) => seller.status === SellerStatus.REJECTED).length,
 });
 
-const extractLocation = (seller: SellerQueryDocument): SellerLocationPoint | null => {
-  if (seller.location) {
-    return {
-      street: seller.location.street,
-      city: seller.location.city,
-      state: seller.location.state,
-      pincode: seller.location.pincode,
-      lat: seller.location.lat,
-      lng: seller.location.lng,
-    };
-  }
+const extractLocation = (seller: ISeller): SellerLocationPoint | null =>
+  seller.location
+    ? {
+        street: seller.location.street,
+        city: seller.location.city,
+        state: seller.location.state,
+        pincode: seller.location.pincode,
+        lat: seller.location.lat,
+        lng: seller.location.lng,
+      }
+    : null;
 
-  const metadata = seller.metadata;
-  if (!isRecord(metadata)) {
-    return null;
-  }
-
-  const location = metadata.location;
-
-  if (!isRecord(location)) {
-    return null;
-  }
-
-  const lat = location.lat;
-  const lng = location.lng;
-
-  return {
-    street: typeof location.street === 'string' ? location.street : '',
-    city: typeof location.city === 'string' ? location.city : '',
-    state: typeof location.state === 'string' ? location.state : '',
-    pincode: typeof location.pincode === 'string' ? location.pincode : '',
-    lat: typeof lat === 'number' ? lat : null,
-    lng: typeof lng === 'number' ? lng : null,
-  };
-};
-
-const buildSellerMapPayload = (sellers: SellerQueryDocument[]): SellerMapPayload => {
+const buildSellerMapPayload = (sellers: ISeller[]): SellerMapPayload => {
   const withLocation: SellerMapRecord[] = [];
   const noLocation: NoLocationSellerRecord[] = [];
 
@@ -265,7 +210,7 @@ const buildSellerMapPayload = (sellers: SellerQueryDocument[]): SellerMapPayload
   };
 };
 
-const buildDailySeries = (sellers: SellerQueryDocument[]): DashboardSeriesPoint[] => {
+const buildDailySeries = (sellers: ISeller[]): DashboardSeriesPoint[] => {
   const formatter = new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric' });
   const buckets = Array.from({ length: 30 }, (_, index) => {
     const date = new Date();
@@ -292,7 +237,7 @@ const buildDailySeries = (sellers: SellerQueryDocument[]): DashboardSeriesPoint[
   return buckets.map(({ label, count }) => ({ label, count }));
 };
 
-const buildMonthlySeries = (sellers: SellerQueryDocument[]): DashboardSeriesPoint[] => {
+const buildMonthlySeries = (sellers: ISeller[]): DashboardSeriesPoint[] => {
   const formatter = new Intl.DateTimeFormat('en-IN', { month: 'short', year: '2-digit' });
   const buckets = Array.from({ length: 12 }, (_, index) => {
     const date = new Date();
@@ -320,7 +265,7 @@ const buildMonthlySeries = (sellers: SellerQueryDocument[]): DashboardSeriesPoin
   return buckets.map(({ label, count }) => ({ label, count }));
 };
 
-const buildAnalyticsSeries = (sellers: SellerQueryDocument[]): AnalyticsSeriesPoint[] => {
+const buildAnalyticsSeries = (sellers: ISeller[]): AnalyticsSeriesPoint[] => {
   const formatter = new Intl.DateTimeFormat('en-IN', { month: 'short', year: '2-digit' });
   const buckets = Array.from({ length: 12 }, (_, index) => {
     const date = new Date();
@@ -358,43 +303,15 @@ const buildAnalyticsSeries = (sellers: SellerQueryDocument[]): AnalyticsSeriesPo
   return buckets.map(({ label, submitted, approved }) => ({ label, submitted, approved }));
 };
 
-const fetchSellerQueryDocuments = async (): Promise<SellerQueryDocument[]> =>
-  (await Seller.find({}, 'sellerName businessName gstOrEnrollmentId status receivedAt statusHistory location metadata')
-    .lean()
-    .exec()) as SellerQueryDocument[];
-
-const fetchSellerNames = async (sellerIds: string[]): Promise<Map<string, string>> => {
-  if (sellerIds.length === 0) {
-    return new Map();
-  }
-
-  const names = (await Seller.find(
-    { _id: { $in: sellerIds } },
-    'sellerName businessName',
-  )
-    .lean()
-    .exec()) as SellerNameDocument[];
-
-  return new Map(
-    names.map((seller) => [
-      seller._id.toString(),
-      seller.businessName || seller.sellerName,
-    ]),
-  );
-};
+const fetchSellerQueryDocuments = async (): Promise<ISeller[]> => adminSellerClient.listAllSellers();
 
 const buildActivityRecords = async (
   logs: AuditQueryDocument[],
+  sellers: ISeller[],
 ): Promise<ActivityRecord[]> => {
-  const sellerIds = [
-    ...new Set(
-      logs
-        .filter((log) => log.targetCollection === 'sellers')
-        .map((log) => log.targetId.toString()),
-    ),
-  ];
-
-  const sellerNames = await fetchSellerNames(sellerIds);
+  const sellerNames = new Map(
+    sellers.map((seller) => [seller._id.toString(), seller.businessName || seller.sellerName]),
+  );
 
   return logs.map((log) => ({
     id: log._id.toString(),
@@ -427,7 +344,7 @@ const buildDashboardPayload = async (
     stats: buildStatusCounts(sellers),
     submissions30Days: buildDailySeries(sellers),
     submissions12Months: buildMonthlySeries(sellers),
-    recentActivity: await buildActivityRecords(recentLogs),
+    recentActivity: await buildActivityRecords(recentLogs, sellers),
     map: buildSellerMapPayload(sellers),
   };
 };
@@ -440,7 +357,6 @@ const buildAnalyticsPayload = async (): Promise<AnalyticsPayload> => {
     label: hour.toString().padStart(2, '0'),
     count: 0,
   }));
-  const actionDurations: number[] = [];
   const rejectionWords = new Map<string, number>();
   const stopWords = new Set([
     'the',
@@ -471,15 +387,6 @@ const buildAnalyticsPayload = async (): Promise<AnalyticsPayload> => {
       hourBucket.count += 1;
     }
 
-    const firstAction = seller.statusHistory.find((entry) => entry.status !== SellerStatus.PENDING);
-    if (firstAction) {
-      const diffHours =
-        (firstAction.changedAt.getTime() - seller.receivedAt.getTime()) / (1000 * 60 * 60);
-      if (Number.isFinite(diffHours) && diffHours >= 0) {
-        actionDurations.push(diffHours);
-      }
-    }
-
     seller.statusHistory
       .filter((entry) => entry.status === SellerStatus.REJECTED && entry.note)
       .forEach((entry) => {
@@ -493,11 +400,6 @@ const buildAnalyticsPayload = async (): Promise<AnalyticsPayload> => {
       });
   });
 
-  const averageActionHours =
-    actionDurations.length > 0
-      ? actionDurations.reduce((sum, value) => sum + value, 0) / actionDurations.length
-      : null;
-
   return {
     stats,
     topStates: [...stateCounts.entries()]
@@ -505,7 +407,7 @@ const buildAnalyticsPayload = async (): Promise<AnalyticsPayload> => {
       .sort((left, right) => right.count - left.count)
       .slice(0, 10),
     approvalRate: buildAnalyticsSeries(sellers),
-    averageActionHours,
+    averageActionHours: null,
     rejectionWords: [...rejectionWords.entries()]
       .map(([word, count]) => ({ word, count }))
       .sort((left, right) => right.count - left.count)
@@ -521,15 +423,10 @@ const buildAuditTimelinePayload = async (): Promise<AuditTimelinePayload> => {
     .lean()
     .exec()) as AuditQueryDocument[];
 
-  const sellerIds = [
-    ...new Set(
-      logs
-        .filter((log) => log.targetCollection === 'sellers')
-        .map((log) => log.targetId.toString()),
-    ),
-  ];
-
-  const sellerNames = await fetchSellerNames(sellerIds);
+  const sellers = await fetchSellerQueryDocuments();
+  const sellerNames = new Map(
+    sellers.map((seller) => [seller._id.toString(), seller.businessName || seller.sellerName]),
+  );
 
   const timelineLogs: AuditTimelineRecord[] = logs.map((log) => ({
     id: log._id.toString(),

@@ -34,6 +34,36 @@ const envSchema = z.object({
     .min(24, 'MOBILE_API_KEY must be at least 24 characters')
     .refine((value) => !isPlaceholderValue(value), 'MOBILE_API_KEY must not use a placeholder value'),
   CLOUDINARY_CLOUD_NAME: z.string().min(1),
+  ZATCH_UPSTREAM_API_URL: z.string().url().optional(),
+  ZATCH_UPSTREAM_API_TOKEN: z.string().min(1).optional(),
+  ZATCH_UPSTREAM_MONGODB_URI: mongodbUriSchema.optional(),
+  ZATCH_UPSTREAM_MONGODB_DB_NAME: z.string().min(1).default('zatch'),
+  ZATCH_UPSTREAM_SELLER_DETAIL_PATH: z.string().min(1).default('/api/v1/user/profile/:userId'),
+  ZATCH_UPSTREAM_SELLER_APPROVAL_PATH: z.string().min(1).default('/api/v1/user/seller/approve'),
+}).superRefine((value, context) => {
+  if (!value.ZATCH_UPSTREAM_API_URL) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ZATCH_UPSTREAM_API_URL'],
+      message: 'ZATCH_UPSTREAM_API_URL is required',
+    });
+  }
+
+  if (!value.ZATCH_UPSTREAM_API_TOKEN) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ZATCH_UPSTREAM_API_TOKEN'],
+      message: 'ZATCH_UPSTREAM_API_TOKEN is required',
+    });
+  }
+
+  if (!value.ZATCH_UPSTREAM_MONGODB_URI) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ZATCH_UPSTREAM_MONGODB_URI'],
+      message: 'ZATCH_UPSTREAM_MONGODB_URI is required',
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

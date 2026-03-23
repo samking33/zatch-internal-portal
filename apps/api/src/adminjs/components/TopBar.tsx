@@ -37,10 +37,6 @@ const getPageTitle = (pathname: string): string => {
     return 'Audit Timeline';
   }
 
-  if (pathname.includes('/resources/Seller')) {
-    return 'Sellers';
-  }
-
   if (pathname.includes('/resources/AuditLog')) {
     return 'Audit Logs';
   }

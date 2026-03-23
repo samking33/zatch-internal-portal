@@ -148,7 +148,7 @@ const buildPopup = (seller: SellerMapRecord): string => {
         <a href="#" data-filter-city="${seller.location.city}" style="color:#2563eb;font-size:11px;text-decoration:none">Filter: ${seller.location.city}</a>
         <a href="#" data-filter-state="${seller.location.state}" style="color:#2563eb;font-size:11px;text-decoration:none">Filter: ${seller.location.state}</a>
       </div>
-      <a href="/admin/resources/Seller/records/${seller.id}/show" style="display:inline-block;margin-top:10px;color:#2563eb;font-weight:600;text-decoration:none">View in Admin →</a>
+      <div style="margin-top:10px;color:#6b7280;font-size:11px">Seller ID: ${seller.id}</div>
     </div>
   `;
 };
@@ -396,7 +396,7 @@ const SellerMapPanel = ({ payload, standalone = false }: SellerMapPanelProps) =>
         <div style={sectionHeaderStyle}>
           <div>
             <h2 style={sectionTitleStyle}>Seller distribution map</h2>
-            <p style={sectionSubtitleStyle}>Plot of geocoded seller locations from the intake flow.</p>
+            <p style={sectionSubtitleStyle}>Plot of geocoded seller locations from the upstream seller account data.</p>
           </div>
         </div>
         <div ref={mapRef} style={{ width: '100%', height: 420, borderRadius: 8, overflow: 'hidden' }} />

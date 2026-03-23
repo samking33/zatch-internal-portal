@@ -19,8 +19,13 @@ export const metadata: Metadata = {
 };
 
 const RootLayout = ({ children }: { children: ReactNode }) => (
-  <html lang="en">
-    <body className={`${inter.variable} min-h-screen bg-page text-primary antialiased`}>{children}</body>
+  <html lang="en" suppressHydrationWarning>
+    <body
+      suppressHydrationWarning
+      className={`${inter.variable} min-h-screen bg-page text-primary antialiased`}
+    >
+      {children}
+    </body>
   </html>
 );
 

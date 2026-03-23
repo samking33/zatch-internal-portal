@@ -132,7 +132,7 @@ sellerRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = sellerIdParamsSchema.parse(req.params);
-      const seller = await sellerService.getSellerById(id);
+      const seller = await sellerService.getSellerDetailById(id);
       sendSuccess(res, seller);
     } catch (error) {
       next(error);

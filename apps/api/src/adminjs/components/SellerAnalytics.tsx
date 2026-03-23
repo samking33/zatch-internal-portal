@@ -224,7 +224,7 @@ const SellerAnalytics = () => {
           <div>
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: '#1f2937' }}>Seller Analytics</h1>
             <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 14 }}>
-              Operational trends across seller intake volume, approvals, and review behavior.
+              Operational trends across seller account volume, approvals, and review behavior.
             </p>
           </div>
         </div>

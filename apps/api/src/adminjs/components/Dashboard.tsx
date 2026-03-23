@@ -263,7 +263,7 @@ const Dashboard = () => {
         <div style={sectionHeaderStyle}>
           <div>
             <h2 style={sectionTitleStyle}>Recent activity feed</h2>
-            <p style={sectionSubtitleStyle}>Last 10 audit entries across intake, review, and session actions.</p>
+            <p style={sectionSubtitleStyle}>Last 10 audit entries across seller reviews, upstream decisions, and session actions.</p>
           </div>
         </div>
         <div>

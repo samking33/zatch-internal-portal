@@ -15,7 +15,7 @@ const AuditPage = () => (
     <PageHeader
       eyebrow="Compliance"
       title="Audit Log"
-      description="Complete action history across seller intake, review decisions, and admin account activity."
+      description="Complete action history across seller reviews, upstream status decisions, and admin account activity."
     />
     <Suspense
       fallback={

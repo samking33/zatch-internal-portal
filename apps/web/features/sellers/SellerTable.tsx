@@ -53,6 +53,39 @@ export const SellerTable = ({ result, initialFilters }: SellerTableProps) => {
     );
   }, [filters.search, rows]);
 
+  const getUpstreamProfile = (seller: ISeller): { username?: string; profileUrl?: string } => {
+    const metadata = seller.metadata;
+
+    if (!metadata || typeof metadata !== 'object' || !('upstream' in metadata)) {
+      return {};
+    }
+
+    const upstream = metadata.upstream;
+
+    if (!upstream || typeof upstream !== 'object') {
+      return {};
+    }
+
+    const username =
+      'username' in upstream && typeof upstream.username === 'string'
+        ? upstream.username
+        : undefined;
+
+    const profileUrl =
+      'profilePic' in upstream &&
+      upstream.profilePic &&
+      typeof upstream.profilePic === 'object' &&
+      'url' in upstream.profilePic &&
+      typeof upstream.profilePic.url === 'string'
+        ? upstream.profilePic.url
+        : undefined;
+
+    return {
+      ...(username ? { username } : {}),
+      ...(profileUrl ? { profileUrl } : {}),
+    };
+  };
+
   return (
     <>
       <SellerFilterBar
@@ -70,7 +103,7 @@ export const SellerTable = ({ result, initialFilters }: SellerTableProps) => {
           result.total === 0 ? (
             <EmptyState
               title="No pending sellers"
-              description="Seller submissions will appear here after they come through the mobile intake flow."
+              description="Seller registrations from the core Zatch backend will appear here when they are ready for review."
             />
           ) : (
             <EmptyState
@@ -99,17 +132,29 @@ export const SellerTable = ({ result, initialFilters }: SellerTableProps) => {
             key: 'seller',
             header: 'Seller',
             className: 'min-w-[240px]',
-            render: (seller) => (
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-primary">
-                  {getInitials(seller.sellerName)}
+            render: (seller) => {
+              const upstreamProfile = getUpstreamProfile(seller);
+
+              return (
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-semibold text-primary">
+                    {upstreamProfile.profileUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={upstreamProfile.profileUrl} alt={seller.sellerName} className="h-full w-full object-cover" />
+                    ) : (
+                      getInitials(seller.sellerName)
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-medium text-primary">{seller.sellerName}</div>
+                    <div className="mt-1 text-sm text-secondary">{seller.businessName}</div>
+                    {upstreamProfile.username ? (
+                      <div className="mt-1 text-xs text-muted">@{upstreamProfile.username}</div>
+                    ) : null}
+                  </div>
                 </div>
-                <div>
-                  <div className="font-medium text-primary">{seller.sellerName}</div>
-                  <div className="mt-1 text-sm text-secondary">{seller.businessName}</div>
-                </div>
-              </div>
-            ),
+              );
+            },
           },
           {
             key: 'gst',
