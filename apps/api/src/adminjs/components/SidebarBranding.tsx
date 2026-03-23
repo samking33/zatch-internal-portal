@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 
 type BrandingOptions = {
   logo?: string;
@@ -11,8 +10,8 @@ type SidebarBrandingProps = {
 };
 
 const SidebarBranding = ({ branding }: SidebarBrandingProps) => (
-  <Link
-    to="/admin"
+  <a
+    href="/admin"
     style={{
       display: 'flex',
       alignItems: 'center',
@@ -60,7 +59,7 @@ const SidebarBranding = ({ branding }: SidebarBrandingProps) => (
     >
       {branding.companyName ?? 'Admin'}
     </div>
-  </Link>
+  </a>
 );
 
 export default SidebarBranding;

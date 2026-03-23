@@ -1,5 +1,4 @@
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router';
 
 type AdminPage = {
   name: string;
@@ -60,21 +59,15 @@ const NavItem = ({
   label,
   href,
   active,
-  onNavigate,
   glyph,
 }: {
   label: string;
   href: string;
   active: boolean;
-  onNavigate: (href: string) => void;
   glyph: React.ReactNode;
 }) => (
   <a
     href={href}
-    onClick={(event) => {
-      event.preventDefault();
-      onNavigate(href);
-    }}
     style={{
       ...linkBaseStyle,
       background: active ? '#3c4f63' : 'transparent',
@@ -88,8 +81,7 @@ const NavItem = ({
 );
 
 const SidebarPages = ({ pages }: SidebarPagesProps) => {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/admin';
 
   const extraPages = (pages ?? []).filter((page) => page.name !== 'home');
 
@@ -111,8 +103,7 @@ const SidebarPages = ({ pages }: SidebarPagesProps) => {
       <NavItem
         label="Home"
         href="/admin"
-        active={location.pathname === '/admin' || location.pathname === '/admin/'}
-        onNavigate={(href) => navigate(href)}
+        active={pathname === '/admin' || pathname === '/admin/'}
         glyph={<HomeGlyph />}
       />
 
@@ -121,8 +112,7 @@ const SidebarPages = ({ pages }: SidebarPagesProps) => {
           key={page.name}
           label={getPageLabel(page.name)}
           href={`/admin/pages/${page.name}`}
-          active={location.pathname.includes(`/pages/${page.name}`)}
-          onNavigate={(href) => navigate(href)}
+          active={pathname.includes(`/pages/${page.name}`)}
           glyph={<DotGlyph />}
         />
       ))}
