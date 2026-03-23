@@ -17,6 +17,7 @@ import { UpstreamSellerClient } from '../modules/sellers/upstream-seller.client'
 import { createAdminJsComponents } from './components';
 import { createAdminJsResources } from './resources';
 import type {
+  AdminSellerRecord,
   ActivityRecord,
   AnalyticsPayload,
   AnalyticsSeriesPoint,
@@ -25,6 +26,7 @@ import type {
   DashboardPayload,
   DashboardSeriesPoint,
   NoLocationSellerRecord,
+  SellerDirectoryPayload,
   SellerLocationPoint,
   SellerMapPayload,
   SellerMapRecord,
@@ -207,6 +209,200 @@ const buildSellerMapPayload = (sellers: ISeller[]): SellerMapPayload => {
     stats: buildStatusCounts(sellers),
     sellers: withLocation,
     noLocation,
+  };
+};
+
+const buildSellerDirectoryPayload = (sellers: ISeller[]): SellerDirectoryPayload => {
+  const emptyDetails: SellerDirectoryPayload['details'] = {};
+  const records: AdminSellerRecord[] = sellers.map((seller) => {
+    const metadata = (seller.metadata ?? {}) as {
+      upstream?: {
+        username?: string;
+        shippingMethod?: string;
+        profilePic?: {
+          url?: string;
+        };
+        sellerStatus?: string;
+      };
+    };
+    const latestStatusEntry = seller.statusHistory
+      .slice()
+      .sort((left, right) => right.changedAt.getTime() - left.changedAt.getTime())[0];
+
+    return {
+      id: seller._id.toString(),
+      sellerName: seller.sellerName,
+      businessName: seller.businessName,
+      email: seller.email,
+      phone: seller.phone,
+      gstOrEnrollmentId: seller.gstOrEnrollmentId,
+      status: seller.status,
+      receivedAt: seller.receivedAt.toISOString(),
+      updatedAt: seller.updatedAt.toISOString(),
+      location: {
+        street: seller.location.street,
+        city: seller.location.city,
+        state: seller.location.state,
+        pincode: seller.location.pincode,
+        lat: seller.location.lat,
+        lng: seller.location.lng,
+      },
+      documentsCount: seller.documents.length,
+      ...(latestStatusEntry ? { lastStatusAt: latestStatusEntry.changedAt.toISOString() } : {}),
+      ...(latestStatusEntry?.note ? { lastStatusNote: latestStatusEntry.note } : {}),
+      upstream: {
+        ...(metadata.upstream?.username ? { username: metadata.upstream.username } : {}),
+        ...(metadata.upstream?.shippingMethod ? { shippingMethod: metadata.upstream.shippingMethod } : {}),
+        ...(metadata.upstream?.profilePic?.url ? { profilePicUrl: metadata.upstream.profilePic.url } : {}),
+        ...(metadata.upstream?.sellerStatus ? { rawSellerStatus: metadata.upstream.sellerStatus } : {}),
+      },
+    };
+  });
+
+  return {
+    stats: buildStatusCounts(sellers),
+    sellers: records,
+    details: emptyDetails,
+  };
+};
+
+const buildSellerDirectoryPayloadWithDetails = async (): Promise<SellerDirectoryPayload> => {
+  const sellers = await fetchSellerQueryDocuments();
+  const basePayload = buildSellerDirectoryPayload(sellers);
+  const detailsEntries = await Promise.all(
+    sellers.map(async (seller) => {
+      const detail = await adminSellerClient.getSellerDetailById(seller._id.toString());
+
+      return [
+        seller._id.toString(),
+        {
+          username: detail.username,
+          email: detail.email,
+          phone: detail.phone,
+          countryCode: detail.countryCode,
+          gender: detail.gender,
+          categoryType: detail.categoryType,
+          sellerStatusRaw: detail.sellerStatusRaw,
+          followerCount: detail.followerCount,
+          reviewsCount: detail.reviewsCount,
+          productsSoldCount: detail.productsSoldCount,
+          customerRating: detail.customerRating,
+          isFollowing: detail.isFollowing,
+          isAdmin: detail.isAdmin,
+          ...(detail.createdAt ? { createdAt: detail.createdAt } : {}),
+          ...(detail.dob ? { dob: detail.dob } : {}),
+          sellerProfile: {
+            businessName: detail.sellerProfile.businessName,
+            shippingMethod: detail.sellerProfile.shippingMethod,
+            tcAccepted: detail.sellerProfile.tcAccepted,
+            address: {
+              billingAddress: detail.sellerProfile.address.billingAddress,
+              pickupAddress: detail.sellerProfile.address.pickupAddress,
+              pinCode: detail.sellerProfile.address.pinCode,
+              state: detail.sellerProfile.address.state,
+              latitude: detail.sellerProfile.address.latitude,
+              longitude: detail.sellerProfile.address.longitude,
+            },
+            bankDetails: {
+              accountHolderName: detail.sellerProfile.bankDetails.accountHolderName,
+              accountNumber: detail.sellerProfile.bankDetails.accountNumber,
+              bankName: detail.sellerProfile.bankDetails.bankName,
+              ifscCode: detail.sellerProfile.bankDetails.ifscCode,
+              upiId: detail.sellerProfile.bankDetails.upiId,
+            },
+            documents: detail.sellerProfile.documents.map((document) => ({
+              type: document.type,
+              url: document.url,
+              publicId: document.publicId,
+            })),
+            ...(detail.sellerProfile.approvalMessage
+              ? { approvalMessage: detail.sellerProfile.approvalMessage }
+              : {}),
+            ...(detail.sellerProfile.rejectionMessage
+              ? { rejectionMessage: detail.sellerProfile.rejectionMessage }
+              : {}),
+          },
+          ...(detail.globalBargainSettings
+            ? {
+                globalBargainSettings: {
+                  enabled: detail.globalBargainSettings.enabled,
+                  autoAcceptDiscount: detail.globalBargainSettings.autoAcceptDiscount,
+                  maximumDiscount: detail.globalBargainSettings.maximumDiscount,
+                },
+              }
+            : {}),
+          ...(detail.shoppingPreferences
+            ? {
+                shoppingPreferences: {
+                  categories: detail.shoppingPreferences.categories,
+                  ...(detail.shoppingPreferences.savedAt
+                    ? { savedAt: detail.shoppingPreferences.savedAt }
+                    : {}),
+                  ...(detail.shoppingPreferences.updatedAt
+                    ? { updatedAt: detail.shoppingPreferences.updatedAt }
+                    : {}),
+                },
+              }
+            : {}),
+          followers: detail.followers.map((record) => ({
+            id: record.id,
+            username: record.username,
+            profilePicUrl: record.profilePicUrl,
+            productsCount: record.productsCount,
+            isSeller: record.isSeller,
+          })),
+          following: detail.following.map((record) => ({
+            id: record.id,
+            username: record.username,
+            profilePicUrl: record.profilePicUrl,
+            productsCount: record.productsCount,
+            isSeller: record.isSeller,
+          })),
+          savedProducts: detail.savedProducts.map((product) => ({
+            id: product.id,
+            name: product.name,
+            category: product.category,
+            price: product.price,
+            discountedPrice: product.discountedPrice,
+          })),
+          sellingProducts: detail.sellingProducts.map((product) => ({
+            id: product.id,
+            name: product.name,
+            category: product.category,
+            price: product.price,
+            discountedPrice: product.discountedPrice,
+          })),
+          uploadedBits: detail.uploadedBits.map((bit) => ({
+            id: bit.id,
+            title: bit.title,
+            ...(bit.createdAt ? { createdAt: bit.createdAt } : {}),
+            viewCount: bit.viewCount,
+            likeCount: bit.likeCount,
+          })),
+          savedBits: detail.savedBits.map((bit) => ({
+            id: bit.id,
+            title: bit.title,
+            ...(bit.createdAt ? { createdAt: bit.createdAt } : {}),
+            viewCount: bit.viewCount,
+            likeCount: bit.likeCount,
+          })),
+          bargainsWithSeller: detail.bargainsWithSeller.map((bargain) => ({
+            id: bargain.id,
+            status: bargain.status,
+            statusLabel: bargain.statusLabel,
+            role: bargain.role,
+            productName: bargain.product.name,
+            currentPrice: bargain.pricing.currentPrice,
+            ...(bargain.dates.created ? { createdAt: bargain.dates.created } : {}),
+          })),
+        },
+      ] as const;
+    }),
+  );
+
+  return {
+    ...basePayload,
+    details: Object.fromEntries(detailsEntries),
   };
 };
 
@@ -508,6 +704,11 @@ export const setupAdminJs = async (): Promise<AdminJsSetupResult> => {
         handler: async (_request: unknown, _response: unknown, context: PageContext) =>
           buildDashboardPayload(context.currentAdmin),
       },
+      sellers: {
+        icon: 'User',
+        component: Components.SellerDirectory,
+        handler: async () => buildSellerDirectoryPayloadWithDetails(),
+      },
       'seller-map': {
         icon: 'Map',
         component: Components.SellerMap,
@@ -539,6 +740,7 @@ export const setupAdminJs = async (): Promise<AdminJsSetupResult> => {
       translations: {
         pages: {
           home: 'Home',
+          sellers: 'Sellers',
           'seller-map': 'Seller Map',
           'seller-analytics': 'Analytics',
           'audit-timeline': 'Audit Timeline',

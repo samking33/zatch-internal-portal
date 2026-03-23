@@ -1,6 +1,8 @@
 AdminJS.UserComponents = {}
 import Dashboard from '../src/adminjs/components/Dashboard'
 AdminJS.UserComponents.Dashboard = Dashboard
+import SellerDirectory from '../src/adminjs/components/SellerDirectory'
+AdminJS.UserComponents.SellerDirectory = SellerDirectory
 import SellerMap from '../src/adminjs/components/SellerMap'
 AdminJS.UserComponents.SellerMap = SellerMap
 import SellerAnalytics from '../src/adminjs/components/SellerAnalytics'

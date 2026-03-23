@@ -12,6 +12,7 @@ export const createAdminJsComponents = (ComponentLoader: ComponentLoaderConstruc
     componentLoader,
     Components: {
       Dashboard: componentLoader.add('Dashboard', './Dashboard'),
+      SellerDirectory: componentLoader.add('SellerDirectory', './SellerDirectory'),
       SellerMap: componentLoader.add('SellerMap', './SellerMap'),
       SellerAnalytics: componentLoader.add('SellerAnalytics', './SellerAnalytics'),
       AuditTimeline: componentLoader.add('AuditTimeline', './AuditTimeline'),
