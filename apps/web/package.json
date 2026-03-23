@@ -1,0 +1,31 @@
+{
+  "name": "@zatch/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@zatch/shared": "*",
+    "autoprefixer": "^10.4.27",
+    "chart.js": "^4.5.1",
+    "next": "^14.2.30",
+    "postcss": "^8.4.31",
+    "react": "^18.3.1",
+    "react-chartjs-2": "^5.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.17",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "typescript": "^5.8.2"
+  }
+}
