@@ -22,6 +22,7 @@ const getRefreshCookieOptions = () => {
     sameSite: (isProduction ? 'none' : 'strict') as 'none' | 'strict',
     maxAge: sevenDaysMs,
     path: '/',
+    ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
   };
 };
 

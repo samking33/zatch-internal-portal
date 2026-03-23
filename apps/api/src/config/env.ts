@@ -13,6 +13,7 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().min(1).default('7d'),
   SESSION_SECRET: z.string().min(1),
   CORS_ORIGIN: z.string().min(1),
+  COOKIE_DOMAIN: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
   MOBILE_API_KEY: z.string().min(1),
   CLOUDINARY_CLOUD_NAME: z.string().min(1),
