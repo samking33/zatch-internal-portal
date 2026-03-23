@@ -14,11 +14,12 @@ const REFRESH_TOKEN_COOKIE = 'refreshToken';
 const getRefreshCookieOptions = () => {
   const env = getEnv();
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  const isProduction = env.NODE_ENV === 'production';
 
   return {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'strict' as const,
+    secure: isProduction,
+    sameSite: (isProduction ? 'none' : 'strict') as 'none' | 'strict',
     maxAge: sevenDaysMs,
     path: '/',
   };
