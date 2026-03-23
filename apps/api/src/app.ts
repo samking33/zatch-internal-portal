@@ -69,6 +69,10 @@ export const createApp = async (): Promise<express.Express> => {
   const protectedApiRouter = Router();
   const { adminRouter, rootPath } = await setupAdminJs();
 
+  if (env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
+
   app.use(
     cors({
       origin: env.CORS_ORIGIN,

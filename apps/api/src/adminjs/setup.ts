@@ -669,6 +669,7 @@ export const setupAdminJs = async (): Promise<AdminJsSetupResult> => {
       resave: false,
       saveUninitialized: false,
       name: 'adminjs',
+      proxy: getEnv().NODE_ENV === 'production',
       store: MongoStore.create({
         mongoUrl: getEnv().MONGODB_URI,
         collectionName: 'adminjs_sessions',
