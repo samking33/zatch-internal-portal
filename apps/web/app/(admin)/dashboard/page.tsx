@@ -131,13 +131,15 @@ const buildSellerTrend = (items: AdminSeller[]) => {
 
   items.forEach((item) => {
     const createdKey = normalizeDateKey(item.createdAt);
-    if (createdKey && counters.has(createdKey)) {
-      counters.get(createdKey)!.submitted += 1;
+    if (!createdKey || !counters.has(createdKey)) {
+      return;
     }
 
-    const updatedKey = normalizeDateKey(item.updatedAt);
-    if (item.sellerStatus === 'approved' && updatedKey && counters.has(updatedKey)) {
-      counters.get(updatedKey)!.approved += 1;
+    const bucket = counters.get(createdKey)!;
+    bucket.submitted += 1;
+
+    if (['approved', 'active'].includes(item.sellerStatus.toLowerCase())) {
+      bucket.approved += 1;
     }
   });
 

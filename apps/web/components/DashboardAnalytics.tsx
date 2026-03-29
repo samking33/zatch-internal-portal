@@ -130,17 +130,18 @@ export const DashboardAnalytics = ({
       <div className="analytics-panel">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="chart-meta tone-overview">Seller intake / approval trend</div>
+            <div className="chart-meta tone-overview">Seller signup trend</div>
             <h2 className="mt-2 text-lg font-semibold tracking-[-0.02em] text-primary">
-              Onboarding velocity
+              Recent signups
             </h2>
             <p className="mt-2 text-sm leading-6 text-secondary">
-              Recent submission volume compared with records that moved into approved status.
+              Shows sellers created in the last 7 days, plus how many of those same signups are
+              currently approved or active.
             </p>
           </div>
           <span className="tone-chip tone-overview">
             <span className="tone-chip-dot bg-[var(--tone-overview)]" />
-            Recent flow
+            Last 7 days
           </span>
         </div>
         <div className="chart-wrap h-[280px]">
@@ -149,7 +150,7 @@ export const DashboardAnalytics = ({
               labels: sellerLabels,
               datasets: [
                 {
-                  label: 'Submitted',
+                  label: 'Signups',
                   data: sellerTrend.map((point) => point.submitted ?? 0),
                   backgroundColor: 'rgba(23, 162, 184, 0.8)',
                   borderColor: 'rgba(23, 162, 184, 1)',
@@ -157,7 +158,7 @@ export const DashboardAnalytics = ({
                   maxBarThickness: 24,
                 },
                 {
-                  label: 'Approved',
+                  label: 'Approved or active now',
                   data: sellerTrend.map((point) => point.approved ?? 0),
                   backgroundColor: 'rgba(40, 167, 69, 0.78)',
                   borderColor: 'rgba(40, 167, 69, 1)',
@@ -213,18 +214,20 @@ export const DashboardAnalytics = ({
         </div>
         <div className="insight-band md:grid-cols-2">
           <div className="insight-card">
-            <div className="chart-meta">Submitted</div>
+            <div className="chart-meta">Signups</div>
             <div className="mt-2 text-lg font-semibold text-primary">
               {sellerTrend.reduce((sum, point) => sum + (point.submitted ?? 0), 0)}
             </div>
-            <div className="mt-1 text-sm text-secondary">Recent sellers added to the review pool.</div>
+            <div className="mt-1 text-sm text-secondary">Seller accounts created in this 7-day window.</div>
           </div>
           <div className="insight-card">
-            <div className="chart-meta">Approved</div>
+            <div className="chart-meta">Approved or active</div>
             <div className="mt-2 text-lg font-semibold text-primary">
               {sellerTrend.reduce((sum, point) => sum + (point.approved ?? 0), 0)}
             </div>
-            <div className="mt-1 text-sm text-secondary">Approvals recorded within the same recent window.</div>
+            <div className="mt-1 text-sm text-secondary">
+              Of those recent signups, accounts that are currently cleared to operate.
+            </div>
           </div>
         </div>
       </div>
