@@ -23,6 +23,12 @@ const jsonError = (message: string, status: number): NextResponse =>
     },
   );
 
+const normalizeUpstreamPath = (path: string[]): string => {
+  const joinedPath = path.join('/').replace(/^\/+/, '');
+
+  return joinedPath.replace(/^api\/v1\/admin\/?/i, '');
+};
+
 const proxyRequest = async (request: NextRequest, context: RouteContext): Promise<NextResponse> => {
   const session = await getServerSession();
 
@@ -44,7 +50,8 @@ const proxyRequest = async (request: NextRequest, context: RouteContext): Promis
     headers.set('Content-Type', contentType);
   }
 
-  const upstreamUrl = `${getAdminApiUrl()}/api/v1/admin/${path.join('/')}${request.nextUrl.search}`;
+  const upstreamPath = normalizeUpstreamPath(path);
+  const upstreamUrl = `${getAdminApiUrl()}/api/v1/admin/${upstreamPath}${request.nextUrl.search}`;
   const method = request.method.toUpperCase();
   const hasBody = !['GET', 'HEAD'].includes(method);
   const body = hasBody ? await request.text() : undefined;

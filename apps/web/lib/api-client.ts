@@ -15,6 +15,23 @@ type ApiClientInit = RequestInit & {
   requireAuth?: boolean;
 };
 
+const normalizeAdminProxyPath = (path: string): string => {
+  const trimmedPath = path.trim();
+
+  if (!trimmedPath) {
+    return '';
+  }
+
+  const [pathname = '', search = ''] = trimmedPath.split('?');
+  const normalizedPathname = pathname
+    .replace(/^\/?api\/v1\/admin\/?/i, '')
+    .replace(/^\/+/, '');
+
+  const resolvedPath = normalizedPathname ? `/${normalizedPathname}` : '';
+
+  return search ? `${resolvedPath}?${search}` : resolvedPath;
+};
+
 export const apiClient = async <T = unknown>(
   path: string,
   init: ApiClientInit = {},
@@ -25,7 +42,7 @@ export const apiClient = async <T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${ADMIN_PROXY_URL}${path}`, {
+  const response = await fetch(`${ADMIN_PROXY_URL}${normalizeAdminProxyPath(path)}`, {
     ...init,
     headers,
     credentials: 'include',
