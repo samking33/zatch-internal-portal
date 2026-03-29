@@ -77,13 +77,13 @@ const ProductsPage = async ({ searchParams }: ProductsPageProps) => {
             <div className="mt-3 flex items-end justify-between gap-4">
               <div>
                 <div className="text-3xl font-semibold tracking-[-0.04em] text-primary">
-                  {Number(stats.active ?? 0)}
+                  {stats.activeProducts}
                 </div>
                 <div className="mt-2 text-sm text-secondary">
                   products are currently active in the live catalog
                 </div>
               </div>
-              <span className="command-badge">{Number(stats.draft ?? 0)} draft</span>
+              <span className="command-badge">{stats.draftProducts} draft</span>
             </div>
           </div>
         }
@@ -93,25 +93,25 @@ const ProductsPage = async ({ searchParams }: ProductsPageProps) => {
         items={[
           {
             label: 'Total products',
-            value: Number(stats.totalProducts ?? stats.total ?? products.pagination.total),
+            value: stats.totalProducts || products.pagination.total,
             helper: `${products.pagination.total} in current result set`,
             tone: 'brand',
           },
           {
             label: 'Active',
-            value: Number(stats.active ?? 0),
+            value: stats.activeProducts,
             helper: 'Live in catalog',
             tone: 'positive',
           },
           {
             label: 'Draft',
-            value: Number(stats.draft ?? 0),
+            value: stats.draftProducts,
             helper: 'Awaiting final review',
             tone: 'neutral',
           },
           {
             label: 'Inactive',
-            value: Number(stats.inactive ?? 0),
+            value: stats.inactiveProducts,
             helper: 'Removed from active circulation',
             tone: 'warning',
           },

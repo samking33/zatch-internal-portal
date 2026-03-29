@@ -18,13 +18,7 @@ const SellerDetailPage = async ({ params }: { params: Promise<{ id: string }> })
     fetchSellerSettlement(id),
   ]);
 
-  const settlementPending =
-    sellerSettlement.summary.pending &&
-    typeof sellerSettlement.summary.pending === 'object' &&
-    sellerSettlement.summary.pending !== null &&
-    'amount' in sellerSettlement.summary.pending
-      ? Number((sellerSettlement.summary.pending as { amount?: unknown }).amount ?? 0)
-      : 0;
+  const settlementPending = sellerSettlement.summary.totalPending;
 
   return (
     <section className="space-y-5">

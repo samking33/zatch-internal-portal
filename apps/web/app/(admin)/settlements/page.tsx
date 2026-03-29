@@ -10,7 +10,6 @@ import {
   fetchPayoutSummary,
   fetchSellerSettlement,
 } from '../../../lib/admin-data';
-import { formatCurrency } from '../../../lib/admin-api';
 
 type SettlementsPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -41,17 +40,6 @@ const SettlementsPage = async ({ searchParams }: SettlementsPageProps) => {
   if (sellerId) queryParams.sellerId = sellerId;
   if (limit) queryParams.limit = limit;
 
-  const pending =
-    payoutSummary.pending &&
-    typeof payoutSummary.pending === 'object' &&
-    payoutSummary.pending !== null
-      ? (payoutSummary.pending as { count?: unknown; amount?: unknown })
-      : {};
-  const paid =
-    payoutSummary.paid && typeof payoutSummary.paid === 'object' && payoutSummary.paid !== null
-      ? (payoutSummary.paid as { count?: unknown; amount?: unknown })
-      : {};
-
   return (
     <section className="space-y-5">
       <PageHeader
@@ -81,13 +69,13 @@ const SettlementsPage = async ({ searchParams }: SettlementsPageProps) => {
             <div className="mt-3 flex items-end justify-between gap-4">
               <div>
                 <div className="text-3xl font-semibold tracking-[-0.04em] text-primary">
-                  {Number(pending.count ?? 0)}
+                  {payoutSummary.pending.count}
                 </div>
                 <div className="mt-2 text-sm text-secondary">
                   payouts are still waiting for a finance decision
                 </div>
               </div>
-              <span className="command-badge">{Number(paid.count ?? 0)} paid</span>
+              <span className="command-badge">{payoutSummary.paid.count} paid</span>
             </div>
           </div>
         }
@@ -97,29 +85,29 @@ const SettlementsPage = async ({ searchParams }: SettlementsPageProps) => {
         items={[
           {
             label: 'Pending payouts',
-            value: Number(pending.count ?? 0),
-            helper: formatCurrency(Number(pending.amount ?? 0)),
+            value: payoutSummary.pending.count,
+            helper: payoutSummary.pending.formatted,
             tone: 'warning',
           },
           {
             label: 'Paid payouts',
-            value: Number(paid.count ?? 0),
-            helper: formatCurrency(Number(paid.amount ?? 0)),
+            value: payoutSummary.paid.count,
+            helper: payoutSummary.paid.formatted,
             tone: 'positive',
           },
           {
             label: 'Commission earned',
-            value:
-              commissionOverview.totalCommissionFormatted?.toString() ??
-              formatCurrency(Number(commissionOverview.totalCommissionEarned ?? 0)),
-            helper: 'Total commission captured',
+            value: payoutSummary.totalCommissionFormatted,
+            helper: `Rate ${commissionOverview.commissionPercent}`,
             tone: 'brand',
           },
           {
-            label: 'Seller focus',
-            value: sellerSettlement?.seller?.username ?? (sellerId ? 'Filtered seller' : 'All sellers'),
+            label: 'Seller share',
+            value: commissionOverview.sellerReceives,
             helper:
-              sellerSettlement ? `${sellerSettlement.payouts.pagination.total} payout records` : 'No seller filter',
+              sellerSettlement
+                ? `${sellerSettlement.payouts.pagination.total} payout records for the selected seller`
+                : 'Seller share after commission',
             tone: 'neutral',
           },
         ]}

@@ -48,9 +48,46 @@ const emptyDashboardSummary: DashboardSummary = {
     approved: 0,
     rejected: 0,
   },
-  productStats: {},
-  orderStats: {},
-  settlementSummary: {},
+  productStats: {
+    totalProducts: 0,
+    activeProducts: 0,
+    draftProducts: 0,
+    inactiveProducts: 0,
+    outOfStock: 0,
+    totalSold: 0,
+    topCategories: [],
+    raw: {},
+  },
+  orderStats: {
+    timeRange: 'week',
+    totalOrders: 0,
+    totalRevenue: 0,
+    totalRevenueFormatted: formatCurrency(0),
+    paidRevenue: 0,
+    paidRevenueFormatted: formatCurrency(0),
+    allTimeTotalRevenue: 0,
+    allTimeTotalRevenueFormatted: formatCurrency(0),
+    pendingOrders: 0,
+    deliveredOrders: 0,
+    statusBreakdown: {},
+    topSellers: [],
+    raw: {},
+    periodRaw: {},
+    allTimeRaw: {},
+  },
+  settlementSummary: {
+    pending: { count: 0, amount: 0, formatted: formatCurrency(0) },
+    approved: { count: 0, amount: 0, formatted: formatCurrency(0) },
+    processing: { count: 0, amount: 0, formatted: formatCurrency(0) },
+    paid: { count: 0, amount: 0, formatted: formatCurrency(0) },
+    failed: { count: 0, amount: 0, formatted: formatCurrency(0) },
+    hold: { count: 0, amount: 0, formatted: formatCurrency(0) },
+    totalCommission: 0,
+    totalCommissionFormatted: formatCurrency(0),
+    totalPayoutsDone: 0,
+    totalPayoutsDoneFormatted: formatCurrency(0),
+    raw: {},
+  },
 };
 
 const trendFormatter = new Intl.DateTimeFormat('en-IN', {
@@ -147,19 +184,6 @@ const buildPayoutMix = (items: AdminPayout[]) => {
     .map(([label, value]) => ({ label, value }));
 };
 
-const extractSummaryEntry = (value: unknown): { count?: number; amount?: number } => {
-  if (!value || typeof value !== 'object') {
-    return {};
-  }
-
-  const record = value as Record<string, unknown>;
-
-  return {
-    count: typeof record.count === 'number' ? record.count : Number(record.count ?? 0),
-    amount: typeof record.amount === 'number' ? record.amount : Number(record.amount ?? 0),
-  };
-};
-
 const isOrderException = (order: AdminOrder) => {
   const status = order.status.toLowerCase();
   const paymentStatus = order.paymentStatus.toLowerCase();
@@ -217,14 +241,11 @@ const DashboardPage = async () => {
       fetchSellerPage({ limit: 24 }).catch(() => emptyListResult<AdminSeller>({ limit: 24 })),
     ]);
 
-  const pendingSummary = extractSummaryEntry(summary.settlementSummary.pending);
-  const holdSummary = extractSummaryEntry(summary.settlementSummary.hold);
-  const activeProducts = Number(summary.productStats.active ?? 0);
-  const totalProducts = Number(
-    summary.productStats.totalProducts ?? summary.productStats.total ?? 0,
-  );
-  const totalRevenue = Number(summary.orderStats.totalRevenue ?? 0);
-  const pendingOrders = Number(summary.orderStats.pendingOrders ?? 0);
+  const pendingSummary = summary.settlementSummary.pending;
+  const activeProducts = summary.productStats.activeProducts;
+  const totalProducts = summary.productStats.totalProducts;
+  const totalRevenue = summary.orderStats.totalRevenue;
+  const pendingOrders = summary.orderStats.pendingOrders;
 
   const sellerTrend = buildSellerTrend(sellerActivity.items);
   const orderTrend = buildOrderTrend(recentOrders.items);
@@ -262,9 +283,9 @@ const DashboardPage = async () => {
             </div>
             <div className="action-band">
               <div className="chart-meta text-[color:var(--metric-positive)]">Settlement queue</div>
-              <div className="mt-2 text-2xl font-semibold text-primary">{Number(pendingSummary.count ?? 0)}</div>
+              <div className="mt-2 text-2xl font-semibold text-primary">{pendingSummary.count}</div>
               <div className="mt-1 text-sm text-secondary">
-                {formatCurrency(Number(pendingSummary.amount ?? 0))} pending payout value
+                {pendingSummary.formatted} pending payout value
               </div>
             </div>
             <div className="action-band">
@@ -294,13 +315,13 @@ const DashboardPage = async () => {
           {
             label: 'Revenue throughput',
             value: formatCurrency(totalRevenue),
-            helper: `${Number(summary.orderStats.totalOrders ?? recentOrders.pagination.total)} total orders`,
+            helper: `${summary.orderStats.totalOrders || recentOrders.pagination.total} total orders`,
             tone: 'positive',
           },
           {
             label: 'Settlement pressure',
-            value: Number(pendingSummary.count ?? 0),
-            helper: formatCurrency(Number(pendingSummary.amount ?? 0)),
+            value: pendingSummary.count,
+            helper: pendingSummary.formatted,
             tone: 'warning',
           },
         ]}

@@ -14,82 +14,19 @@ type OrderInsightsPageProps = {
 
 type TimeRange = 'today' | 'month' | 'year';
 
-type TopSeller = {
-  id: string;
-  username: string;
-  businessName: string;
-  orderCount: number;
-  totalRevenue: number;
-};
-
 type StatusBreakdownRow = {
   status: string;
   count: number;
 };
 
 const timeRanges: TimeRange[] = ['today', 'month', 'year'];
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const toStringValue = (value: unknown): string => {
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  return '';
-};
-
-const toNumberValue = (value: unknown): number => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.replace(/[^\d.-]/g, '');
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
-};
-
-const getStatsRecord = (value: Record<string, unknown>): Record<string, unknown> =>
-  isRecord(value.stats) ? (value.stats as Record<string, unknown>) : value;
-
-const getPeriodRecord = (value: Record<string, unknown>): Record<string, unknown> =>
-  isRecord(value.period) ? (value.period as Record<string, unknown>) : {};
-
-const getTopSellers = (value: Record<string, unknown>): TopSeller[] => {
-  const topSellers = Array.isArray(value.topSellers) ? value.topSellers : [];
-
-  return topSellers.map((item) => {
-    const record = isRecord(item) ? item : {};
-
-    return {
-      id: toStringValue(record._id),
-      username: toStringValue(record.username) || 'Unknown seller',
-      businessName: toStringValue(record.businessName) || 'No business name',
-      orderCount: toNumberValue(record.orderCount),
-      totalRevenue: toNumberValue(record.totalRevenue),
-    };
-  });
-};
-
-const getStatusBreakdown = (value: Record<string, unknown>): StatusBreakdownRow[] => {
-  const breakdown = isRecord(value.statusBreakdown) ? value.statusBreakdown : {};
-
-  return Object.entries(breakdown)
+const getStatusBreakdown = (value: Record<string, number>): StatusBreakdownRow[] =>
+  Object.entries(value)
     .map(([status, count]) => ({
       status,
-      count: toNumberValue(count),
+      count,
     }))
     .sort((left, right) => right.count - left.count);
-};
 
 const OrderInsightsPage = async ({ searchParams }: OrderInsightsPageProps) => {
   const resolvedSearchParams = (await searchParams) ?? {};
@@ -105,16 +42,15 @@ const OrderInsightsPage = async ({ searchParams }: OrderInsightsPageProps) => {
   ]);
 
   const statsByRange = {
-    today: getStatsRecord(todayStatsPayload),
-    month: getStatsRecord(monthStatsPayload),
-    year: getStatsRecord(yearStatsPayload),
-  } satisfies Record<TimeRange, Record<string, unknown>>;
+    today: todayStatsPayload,
+    month: monthStatsPayload,
+    year: yearStatsPayload,
+  };
 
   const selectedStats = statsByRange[activeTimeRange];
-  const selectedPeriod = getPeriodRecord(selectedStats);
-  const selectedTopSellers = getTopSellers(selectedStats);
-  const selectedStatusBreakdown = getStatusBreakdown(selectedStats);
-  const selectedOrderTotal = toNumberValue(selectedPeriod.totalOrders);
+  const selectedTopSellers = selectedStats.topSellers;
+  const selectedStatusBreakdown = getStatusBreakdown(selectedStats.statusBreakdown);
+  const selectedOrderTotal = selectedStats.totalOrders;
 
   const rangeLabelMap: Record<TimeRange, string> = {
     today: 'Today',
@@ -164,7 +100,7 @@ const OrderInsightsPage = async ({ searchParams }: OrderInsightsPageProps) => {
                   orders reported for the selected order stats window
                 </div>
               </div>
-              <span className="command-badge">{toStringValue(selectedPeriod.totalRevenue) || formatCurrency(0)}</span>
+              <span className="command-badge">{selectedStats.totalRevenueFormatted}</span>
             </div>
           </div>
         }
@@ -172,12 +108,10 @@ const OrderInsightsPage = async ({ searchParams }: OrderInsightsPageProps) => {
 
       <MetricStrip
         items={timeRanges.map((range) => {
-          const period = getPeriodRecord(statsByRange[range]);
-
           return {
             label: rangeLabelMap[range],
-            value: toNumberValue(period.totalOrders),
-            helper: toStringValue(period.totalRevenue) || formatCurrency(0),
+            value: statsByRange[range].totalOrders,
+            helper: statsByRange[range].totalRevenueFormatted,
             tone: activeTimeRange === range ? 'brand' : 'neutral',
           };
         })}
@@ -187,22 +121,19 @@ const OrderInsightsPage = async ({ searchParams }: OrderInsightsPageProps) => {
         items={[
           {
             label: 'Selected revenue',
-            value: toStringValue(selectedPeriod.totalRevenue) || formatCurrency(0),
+            value: selectedStats.totalRevenueFormatted,
             helper: `${rangeLabelMap[activeTimeRange]} gross order value`,
             tone: 'brand',
           },
           {
             label: 'Paid revenue',
-            value: toStringValue(selectedPeriod.paidRevenue) || formatCurrency(0),
+            value: selectedStats.paidRevenueFormatted,
             helper: 'Paid revenue inside this stats window',
             tone: 'positive',
           },
           {
             label: 'All-time revenue',
-            value:
-              toStringValue(
-                isRecord(selectedStats.allTime) ? selectedStats.allTime.totalRevenue : '',
-              ) || formatCurrency(0),
+            value: selectedStats.allTimeTotalRevenueFormatted,
             helper: 'Overall revenue reported by the API',
             tone: 'neutral',
           },

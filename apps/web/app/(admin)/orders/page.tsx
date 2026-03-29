@@ -83,12 +83,7 @@ const OrdersPage = async ({ searchParams }: OrdersPageProps) => {
   if (sellerId) queryParams.sellerId = sellerId;
   if (limit) queryParams.limit = limit;
 
-  const deliveredCount =
-    typeof stats.statusCounts === 'object' &&
-    stats.statusCounts !== null &&
-    'delivered' in stats.statusCounts
-      ? Number((stats.statusCounts as Record<string, unknown>).delivered ?? 0)
-      : 0;
+  const deliveredCount = stats.deliveredOrders;
 
   return (
     <section className="space-y-5">
@@ -119,7 +114,7 @@ const OrdersPage = async ({ searchParams }: OrdersPageProps) => {
             <div className="mt-3 flex items-end justify-between gap-4">
               <div>
                 <div className="text-3xl font-semibold tracking-[-0.04em] text-primary">
-                  {Number(stats.pendingOrders ?? 0)}
+                  {stats.pendingOrders}
                 </div>
                 <div className="mt-2 text-sm text-secondary">
                   orders are still waiting inside the fulfillment pipeline
@@ -135,19 +130,19 @@ const OrdersPage = async ({ searchParams }: OrdersPageProps) => {
         items={[
           {
             label: 'Total orders',
-            value: Number(stats.totalOrders ?? orders.pagination.total),
+            value: stats.totalOrders || orders.pagination.total,
             helper: `${orders.pagination.total} in current result set`,
             tone: 'brand',
           },
           {
             label: 'Revenue',
-            value: formatCurrency(Number(stats.totalRevenue ?? 0)),
+            value: stats.totalRevenueFormatted,
             helper: 'Gross order value',
             tone: 'positive',
           },
           {
             label: 'Pending',
-            value: Number(stats.pendingOrders ?? 0),
+            value: stats.pendingOrders,
             helper: 'Orders still waiting in flow',
             tone: 'warning',
           },
