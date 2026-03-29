@@ -28,7 +28,7 @@ const config: Config = {
         card: 'var(--card-shadow)',
       },
       borderRadius: {
-        card: '8px',
+        card: '14px',
       },
       fontSize: {
         base: ['14px', '20px'],

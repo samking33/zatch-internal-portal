@@ -8,9 +8,9 @@ type ToastItem = {
 };
 
 const toneClasses: Record<ToastItem['type'], string> = {
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-  error: 'border-red-200 bg-red-50 text-red-900',
-  info: 'border-blue-200 bg-blue-50 text-blue-900',
+  success: 'border-emerald-200 bg-white/95 text-emerald-950',
+  error: 'border-red-200 bg-white/95 text-red-950',
+  info: 'border-blue-200 bg-white/95 text-blue-950',
 };
 
 export const ToastViewport = ({
@@ -26,7 +26,7 @@ export const ToastViewport = ({
         key={toast.id}
         type="button"
         onClick={() => onDismiss(toast.id)}
-        className={`pointer-events-auto w-full rounded-lg border px-4 py-3 text-left shadow-card ${toneClasses[toast.type]}`}
+        className={`pointer-events-auto w-full rounded-2xl border px-4 py-3 text-left shadow-card backdrop-blur ${toneClasses[toast.type]}`}
       >
         <div className="text-sm font-medium">{toast.title}</div>
         {toast.description ? <div className="mt-1 text-xs opacity-80">{toast.description}</div> : null}

@@ -1,55 +1,57 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import type {
-  ApiErrorResponse,
-  ApiSuccessResponse,
-  LoginResponseData,
-  RefreshResponseData,
-} from '@zatch/shared';
+import type { ApiErrorResponse, ApiSuccessResponse } from '@zatch/shared';
 
-const REFRESH_COOKIE = 'refreshToken';
-const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
-
-const parseJson = async <T>(response: Response): Promise<T> => response.json() as Promise<T>;
+import {
+  ADMIN_SESSION_MAX_AGE,
+  ADMIN_SESSION_TOKEN_COOKIE,
+  ADMIN_SESSION_USER_COOKIE,
+  canAccessPortal,
+  getAdminApiUrl,
+  getApiErrorMessage,
+  normalizeLoginPayload,
+  parseJsonResponse,
+  type SessionLoginData,
+} from './admin-api';
+import { parseSessionUserCookie, serializeSessionUserCookie } from './session-cookie';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const getApiUrl = (): string => {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-
-  if (apiUrl) {
-    return apiUrl;
-  }
-
-  if (!isProduction) {
-    return 'http://localhost:4000';
-  }
-
-  throw new Error('NEXT_PUBLIC_API_URL is required in production');
-};
-
-const refreshCookieOptions = {
+const sessionCookieOptions = {
   httpOnly: true,
   secure: isProduction,
-  sameSite: 'lax' as const,
+  sameSite: 'strict' as const,
   path: '/',
-  maxAge: SEVEN_DAYS_SECONDS,
+  maxAge: ADMIN_SESSION_MAX_AGE,
+  priority: 'high' as const,
 };
 
-const extractRefreshToken = (setCookieHeader: string | null): string | null => {
-  if (!setCookieHeader) {
-    return null;
-  }
+const applyNoStore = (response: NextResponse): NextResponse => {
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
+};
 
-  const match = setCookieHeader.match(/refreshToken=([^;]+)/);
-  return match?.[1] ?? null;
+const clearSessionCookies = (response: NextResponse): NextResponse => {
+  response.cookies.set(ADMIN_SESSION_TOKEN_COOKIE, '', {
+    ...sessionCookieOptions,
+    maxAge: 0,
+  });
+  response.cookies.set(ADMIN_SESSION_USER_COOKIE, '', {
+    ...sessionCookieOptions,
+    maxAge: 0,
+  });
+
+  return response;
 };
 
 export const createSessionLoginResponse = async (request: NextRequest): Promise<NextResponse> => {
-  const body = (await request.json()) as { email?: string; password?: string };
-  const apiUrl = getApiUrl();
+  const body = (await request.json()) as {
+    phone?: string;
+    countryCode?: string;
+    password?: string;
+  };
 
-  const upstream = await fetch(`${apiUrl}/api/auth/login`, {
+  const upstream = await fetch(`${getAdminApiUrl()}/api/v1/admin/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,77 +60,127 @@ export const createSessionLoginResponse = async (request: NextRequest): Promise<
     cache: 'no-store',
   });
 
-  const payload = await parseJson<ApiSuccessResponse<LoginResponseData> | ApiErrorResponse>(upstream);
+  const payload = await parseJsonResponse(upstream);
 
-  if (!upstream.ok || !payload.success) {
-    return NextResponse.json(payload, { status: upstream.status });
-  }
-
-  const refreshToken = extractRefreshToken(upstream.headers.get('set-cookie'));
-
-  if (!refreshToken) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Missing refresh token',
-      } satisfies ApiErrorResponse,
-      { status: 500 },
+  if (!upstream.ok || payload.success === false) {
+    return applyNoStore(
+      NextResponse.json(
+        {
+          success: false,
+          error: getApiErrorMessage(payload, 'Login failed'),
+        } satisfies ApiErrorResponse,
+        { status: upstream.status || 500 },
+      ),
     );
   }
 
-  const response = NextResponse.json(payload, { status: upstream.status });
-  response.cookies.set(REFRESH_COOKIE, refreshToken, refreshCookieOptions);
+  const normalized = normalizeLoginPayload(payload);
+
+  if (!normalized.accessToken || !normalized.user.id) {
+    return applyNoStore(
+      NextResponse.json(
+        {
+          success: false,
+          error: 'Login response was missing session details',
+        } satisfies ApiErrorResponse,
+        { status: 500 },
+      ),
+    );
+  }
+
+  if (!canAccessPortal(normalized.user)) {
+    return applyNoStore(
+      NextResponse.json(
+        {
+          success: false,
+          error: 'This account does not have portal access',
+        } satisfies ApiErrorResponse,
+        { status: 403 },
+      ),
+    );
+  }
+
+  const response = applyNoStore(
+    NextResponse.json(
+      {
+        success: true,
+        data: {
+          user: normalized.user,
+        },
+      } satisfies ApiSuccessResponse<SessionLoginData>,
+      { status: 200 },
+    ),
+  );
+
+  response.cookies.set(ADMIN_SESSION_TOKEN_COOKIE, normalized.accessToken, sessionCookieOptions);
+  response.cookies.set(
+    ADMIN_SESSION_USER_COOKIE,
+    await serializeSessionUserCookie(normalized.user),
+    sessionCookieOptions,
+  );
+
   return response;
 };
 
 export const createSessionRefreshResponse = async (request: NextRequest): Promise<NextResponse> => {
-  const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
-  const apiUrl = getApiUrl();
+  const accessToken = request.cookies.get(ADMIN_SESSION_TOKEN_COOKIE)?.value;
+  const encodedUser = request.cookies.get(ADMIN_SESSION_USER_COOKIE)?.value;
 
-  if (!refreshToken) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Unauthorized',
-      } satisfies ApiErrorResponse,
-      { status: 401 },
+  if (!accessToken || !encodedUser) {
+    return clearSessionCookies(
+      applyNoStore(
+        NextResponse.json(
+          {
+            success: false,
+            error: 'Unauthorized',
+          } satisfies ApiErrorResponse,
+          { status: 401 },
+        ),
+      ),
     );
   }
 
-  const upstream = await fetch(`${apiUrl}/api/auth/refresh`, {
-    method: 'POST',
-    headers: {
-      cookie: `${REFRESH_COOKIE}=${refreshToken}`,
-    },
-    cache: 'no-store',
-  });
+  const user = await parseSessionUserCookie(encodedUser);
 
-  const payload = await parseJson<ApiSuccessResponse<RefreshResponseData> | ApiErrorResponse>(upstream);
-  return NextResponse.json(payload, { status: upstream.status });
+  if (!user) {
+    return clearSessionCookies(
+      applyNoStore(
+        NextResponse.json(
+          {
+            success: false,
+            error: 'Unauthorized',
+          } satisfies ApiErrorResponse,
+          { status: 401 },
+        ),
+      ),
+    );
+  }
+
+  return applyNoStore(
+    NextResponse.json(
+      {
+        success: true,
+        data: {
+          user,
+        },
+      } satisfies ApiSuccessResponse<SessionLoginData>,
+      { status: 200 },
+    ),
+  );
 };
 
-export const createSessionLogoutResponse = async (request: NextRequest): Promise<NextResponse> => {
-  const authorization = request.headers.get('authorization');
-  const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
-  const headers = new Headers();
-  const apiUrl = getApiUrl();
-
-  if (authorization) {
-    headers.set('authorization', authorization);
-  }
-
-  if (refreshToken) {
-    headers.set('cookie', `${REFRESH_COOKIE}=${refreshToken}`);
-  }
-
-  const upstream = await fetch(`${apiUrl}/api/auth/logout`, {
-    method: 'POST',
-    headers,
-    cache: 'no-store',
-  });
-
-  const payload = await parseJson<ApiSuccessResponse<{ message: string }> | ApiErrorResponse>(upstream);
-  const response = NextResponse.json(payload, { status: upstream.status });
-  response.cookies.delete(REFRESH_COOKIE);
-  return response;
+export const createSessionLogoutResponse = async (): Promise<NextResponse> => {
+  return clearSessionCookies(
+    applyNoStore(
+      NextResponse.json(
+        {
+          success: true,
+          data: {
+            message: 'Logged out',
+          },
+        },
+        { status: 200 },
+      ),
+    ),
+  );
 };

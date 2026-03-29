@@ -12,10 +12,10 @@ export const AdminShell = ({ children }: { children: ReactNode }) => {
   return (
     <div className="min-h-screen bg-page">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="lg:pl-[260px]">
+      <div className="lg:pl-[280px]">
         <Topbar onMenuToggle={() => setSidebarOpen((current) => !current)} />
-        <main className="px-4 py-4 sm:px-6 sm:py-6">
-          <div className="mx-auto max-w-[1600px]">{children}</div>
+        <main className="px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+          <div className="page-shell mx-auto max-w-[1580px] space-y-5">{children}</div>
         </main>
       </div>
     </div>

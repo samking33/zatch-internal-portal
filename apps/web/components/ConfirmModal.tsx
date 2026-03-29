@@ -44,20 +44,20 @@ export const ConfirmModal = ({
   const Icon = tone === 'reject' ? XCircleIcon : CheckCircleIcon;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 px-4 py-8">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 px-4 py-8 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
-        className="w-full max-w-md rounded-card bg-white p-6 shadow-xl"
+        className="w-full max-w-md rounded-card border border-border bg-[rgba(248,250,252,0.98)] p-6 shadow-[0_30px_60px_rgba(2,6,23,0.3)]"
       >
         <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-full ${toneClasses}`}>
           <Icon className="h-6 w-6" />
         </div>
-        <h2 id="confirm-modal-title" className="text-lg font-medium text-primary">
+        <h2 id="confirm-modal-title" className="text-lg font-semibold tracking-[-0.02em] text-primary">
           {title}
         </h2>
-        <p className="mt-2 text-sm text-secondary">{description}</p>
+        <p className="mt-2 text-sm leading-6 text-secondary">{description}</p>
         {children ? <div className="mt-4">{children}</div> : null}
         <div className="mt-5 flex justify-end gap-3">
           <button type="button" className="btn-ghost" onClick={onCancel} disabled={loading}>

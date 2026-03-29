@@ -36,7 +36,7 @@ export const Pagination = ({
   if (totalPages <= 1) {
     return (
       <div className="flex items-center justify-between border-t border-border px-5 py-4 text-sm text-secondary">
-        <span>
+        <span className="font-medium">
           Showing {Math.min(totalItems, pageSize)} of {totalItems} results
         </span>
       </div>
@@ -49,10 +49,10 @@ export const Pagination = ({
 
   return (
     <div className="flex flex-col gap-3 border-t border-border px-5 py-4 text-sm text-secondary sm:flex-row sm:items-center sm:justify-between">
-      <span>
+      <span className="font-medium">
         Showing {start}-{end} of {totalItems} results
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           className="btn-ghost gap-1 px-3"
@@ -75,8 +75,8 @@ export const Pagination = ({
                 onClick={() => onPageChange(item)}
                 className={
                   item === page
-                    ? 'inline-flex h-9 min-w-9 items-center justify-center rounded-lg bg-brand px-3 text-sm font-medium text-white'
-                    : 'inline-flex h-9 min-w-9 items-center justify-center rounded-lg border border-border bg-white px-3 text-sm font-medium text-primary hover:bg-slate-50'
+                    ? 'inline-flex h-10 min-w-10 items-center justify-center rounded-xl bg-brand px-3 text-sm font-semibold text-white shadow-[0_16px_28px_rgba(37,99,235,0.22)]'
+                    : 'inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-border bg-white/88 px-3 text-sm font-semibold text-primary hover:bg-white'
                 }
               >
                 {item}

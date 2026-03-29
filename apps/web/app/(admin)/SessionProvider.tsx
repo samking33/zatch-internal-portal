@@ -1,13 +1,10 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { createContext, useEffect, useMemo, useState } from 'react';
-
-import type { IAdminUser } from '@zatch/shared';
+import { createContext, useMemo, useState } from 'react';
 
 import { ToastViewport } from '../../components/ToastViewport';
-import { apiClient } from '../../lib/api-client';
-import { authStore } from '../../store/auth.store';
+import type { AdminSessionUser } from '../../lib/admin-api';
 
 type Toast = {
   id: string;
@@ -17,8 +14,7 @@ type Toast = {
 };
 
 type SessionContextValue = {
-  user: IAdminUser;
-  accessToken: string;
+  user: AdminSessionUser;
   logout: () => Promise<void>;
   notify: (toast: Omit<Toast, 'id'>) => void;
 };
@@ -26,25 +22,16 @@ type SessionContextValue = {
 export const SessionContext = createContext<SessionContextValue | null>(null);
 
 type SessionProviderProps = {
-  initialUser: IAdminUser;
-  initialAccessToken: string;
+  initialUser: AdminSessionUser;
   children: ReactNode;
 };
 
 export const SessionProvider = ({
   initialUser,
-  initialAccessToken,
   children,
 }: SessionProviderProps) => {
   const [user] = useState(initialUser);
   const [toasts, setToasts] = useState<Toast[]>([]);
-
-  useEffect(() => {
-    authStore.setAccessToken(initialAccessToken);
-    return () => {
-      authStore.clearAccessToken();
-    };
-  }, [initialAccessToken]);
 
   const dismissToast = (id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -53,7 +40,6 @@ export const SessionProvider = ({
   const value = useMemo<SessionContextValue>(
     () => ({
       user,
-      accessToken: initialAccessToken,
       notify: (toast) => {
         const id = crypto.randomUUID();
         setToasts((current) => [...current.slice(-2), { ...toast, id }]);
@@ -65,15 +51,11 @@ export const SessionProvider = ({
         await fetch('/api/session/logout', {
           method: 'POST',
           credentials: 'include',
-          headers: {
-            Authorization: `Bearer ${authStore.getAccessToken() ?? initialAccessToken}`,
-          },
         });
-        authStore.clearAccessToken();
         window.location.href = '/login';
       },
     }),
-    [initialAccessToken, user],
+    [user],
   );
 
   return (

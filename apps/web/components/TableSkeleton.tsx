@@ -11,7 +11,7 @@ export const TableSkeleton = ({ columns, rows = 5 }: TableSkeletonProps) => (
     </div>
     <div className="table-wrap">
       <table className="min-w-full">
-        <thead className="bg-slate-50">
+        <thead className="bg-[rgba(15,23,42,0.03)]">
           <tr>
             {Array.from({ length: columns }).map((_, index) => (
               <th key={index} className="px-5 py-3">

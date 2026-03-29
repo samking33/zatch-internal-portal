@@ -1,13 +1,21 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { IBM_Plex_Mono, Source_Sans_3 } from 'next/font/google';
 
 import './globals.css';
 
-const inter = Inter({
+const sourceSans = Source_Sans_3({
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-plex-sans',
   display: 'swap',
+  weight: ['400', '500', '600', '700'],
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  variable: '--font-plex-mono',
+  display: 'swap',
+  weight: ['400', '500'],
 });
 
 export const metadata: Metadata = {
@@ -22,7 +30,7 @@ const RootLayout = ({ children }: { children: ReactNode }) => (
   <html lang="en" suppressHydrationWarning>
     <body
       suppressHydrationWarning
-      className={`${inter.variable} min-h-screen bg-page text-primary antialiased`}
+      className={`${sourceSans.variable} ${plexMono.variable} min-h-screen bg-page text-primary antialiased`}
     >
       {children}
     </body>

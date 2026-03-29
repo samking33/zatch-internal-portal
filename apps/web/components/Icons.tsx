@@ -52,6 +52,32 @@ export const SellersIcon = createIcon(
   </>,
 );
 
+export const ProductsIcon = createIcon(
+  <>
+    <path d="M4 7.5 12 3l8 4.5" />
+    <path d="M4 7.5V16.5L12 21l8-4.5V7.5" />
+    <path d="M12 21v-9" />
+    <path d="M20 7.5 12 12 4 7.5" />
+  </>,
+);
+
+export const OrdersIcon = createIcon(
+  <>
+    <path d="M4 6h13l3 3v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6Z" />
+    <path d="M14 6v4h6" />
+    <path d="M8 13h8" />
+    <path d="M8 17h5" />
+  </>,
+);
+
+export const WalletIcon = createIcon(
+  <>
+    <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" />
+    <path d="M4 10h16" />
+    <path d="M16 14h2" />
+  </>,
+);
+
 export const AuditIcon = createIcon(
   <>
     <path d="M8 7h8" />
@@ -134,6 +160,8 @@ export const CopyIcon = createIcon(
 export const ChevronLeftIcon = createIcon(<path d="m15 18-6-6 6-6" />);
 
 export const ChevronRightIcon = createIcon(<path d="m9 18 6-6-6-6" />);
+
+export const ChevronDownIcon = createIcon(<path d="m6 9 6 6 6-6" />);
 
 export const MoreHorizontalIcon = createIcon(
   <>

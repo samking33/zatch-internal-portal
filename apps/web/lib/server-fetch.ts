@@ -1,127 +1,100 @@
 import { cookies } from 'next/headers';
 
-import type {
-  ApiErrorResponse,
-  ApiSuccessResponse,
-  IAdminUser,
-  RefreshResponseData,
-} from '@zatch/shared';
+import type { ApiSuccessResponse } from '@zatch/shared';
 
-const getApiUrl = (): string => {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+import {
+  ADMIN_SESSION_TOKEN_COOKIE,
+  ADMIN_SESSION_USER_COOKIE,
+  type AdminSessionUser,
+  getAdminApiUrl,
+  getApiErrorMessage,
+  parseJsonResponse,
+} from './admin-api';
+import { parseSessionUserCookie } from './session-cookie';
 
-  if (apiUrl) {
-    return apiUrl;
-  }
+const isRetriableFetchError = (error: unknown): boolean => {
+  const message = error instanceof Error ? `${error.message} ${(error as { cause?: unknown }).cause ?? ''}` : String(error);
 
-  if (process.env.NODE_ENV !== 'production') {
-    return 'http://localhost:4000';
-  }
-
-  throw new Error('NEXT_PUBLIC_API_URL is required in production');
+  return (
+    message.includes('fetch failed') ||
+    message.includes('ECONNRESET') ||
+    message.includes('ETIMEDOUT') ||
+    message.includes('ERR_SSL_') ||
+    message.includes('bad record mac')
+  );
 };
 
-const parseJson = async <T>(response: Response): Promise<T> => response.json() as Promise<T>;
-
-const buildCookieHeader = async (): Promise<string> =>
-  (await cookies())
-    .getAll()
-    .map((cookie) => `${cookie.name}=${cookie.value}`)
-    .join('; ');
-
-export const refreshServerAccessToken = async (): Promise<string | null> => {
-  const apiUrl = getApiUrl();
-  const cookieHeader = await buildCookieHeader();
-
-  if (!cookieHeader) {
-    return null;
-  }
-
-  const response = await fetch(`${apiUrl}/api/auth/refresh`, {
-    method: 'POST',
-    headers: {
-      cookie: cookieHeader,
-    },
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const payload = await parseJson<ApiSuccessResponse<RefreshResponseData> | ApiErrorResponse>(response);
-
-  if (!payload.success) {
-    return null;
-  }
-
-  return payload.data.accessToken;
-};
-
-export const serverFetch = async <T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<ApiSuccessResponse<T>> => {
-  const apiUrl = getApiUrl();
-  const cookieHeader = await buildCookieHeader();
-  const accessToken = await refreshServerAccessToken();
-
-  if (!accessToken) {
-    throw new Error('Unauthorized');
-  }
-
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...init,
-    cache: 'no-store',
-    headers: {
-      ...(init.headers ?? {}),
-      Authorization: `Bearer ${accessToken}`,
-      cookie: cookieHeader,
-    },
-  });
-
-  const payload = await parseJson<ApiSuccessResponse<T> | ApiErrorResponse>(response);
-
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.success ? 'Request failed' : payload.error);
-  }
-
-  return payload;
-};
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const getServerSession = async (): Promise<{
   accessToken: string;
-  user: IAdminUser;
+  user: AdminSessionUser;
 } | null> => {
-  const apiUrl = getApiUrl();
-  const cookieHeader = await buildCookieHeader();
-  const accessToken = await refreshServerAccessToken();
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(ADMIN_SESSION_TOKEN_COOKIE)?.value;
+  const user = await parseSessionUserCookie(cookieStore.get(ADMIN_SESSION_USER_COOKIE)?.value);
 
-  if (!accessToken) {
-    return null;
-  }
-
-  const response = await fetch(`${apiUrl}/api/auth/me`, {
-    method: 'GET',
-    cache: 'no-store',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      cookie: cookieHeader,
-    },
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const payload = await parseJson<ApiSuccessResponse<IAdminUser> | ApiErrorResponse>(response);
-
-  if (!payload.success) {
+  if (!accessToken || !user) {
     return null;
   }
 
   return {
     accessToken,
-    user: payload.data,
+    user,
+  };
+};
+
+export const serverFetch = async <T = unknown>(
+  path: string,
+  init: RequestInit = {},
+): Promise<ApiSuccessResponse<T>> => {
+  const session = await getServerSession();
+
+  if (!session) {
+    throw new Error('Unauthorized');
+  }
+
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${session.accessToken}`);
+
+  if (init.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  let response: Response | null = null;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      response = await fetch(`${getAdminApiUrl()}${path}`, {
+        ...init,
+        cache: 'no-store',
+        headers,
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === 2 || !isRetriableFetchError(error)) {
+        throw error;
+      }
+
+      await sleep(200 * (attempt + 1));
+    }
+  }
+
+  if (!response) {
+    throw (lastError instanceof Error ? lastError : new Error('Request failed'));
+  }
+
+  const payload = await parseJsonResponse(response);
+
+  if (!response.ok || payload.success === false) {
+    throw new Error(getApiErrorMessage(payload, 'Request failed'));
+  }
+
+  return {
+    success: true,
+    data: payload as T,
   };
 };

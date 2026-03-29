@@ -1,9 +1,30 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-const PROTECTED_PATHS = ['/dashboard', '/sellers', '/audit', '/admin-users'];
+import {
+  ADMIN_SESSION_TOKEN_COOKIE,
+  ADMIN_SESSION_USER_COOKIE,
+  canAccessPortal,
+  canManageAdmins,
+} from './lib/admin-api';
+import { parseSessionUserCookie } from './lib/session-cookie';
 
-export const middleware = (request: NextRequest): NextResponse => {
+const PROTECTED_PATHS = ['/dashboard', '/sellers', '/products', '/orders', '/settlements', '/admins'];
+
+const redirectToLogin = (request: NextRequest): NextResponse => {
+  const loginUrl = new URL('/login', request.url);
+  loginUrl.searchParams.set(
+    'redirectTo',
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
+
+  const response = NextResponse.redirect(loginUrl);
+  response.cookies.delete(ADMIN_SESSION_TOKEN_COOKIE);
+  response.cookies.delete(ADMIN_SESSION_USER_COOKIE);
+  return response;
+};
+
+export const middleware = async (request: NextRequest): Promise<NextResponse> => {
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PATHS.some((path) => pathname.startsWith(path));
 
@@ -11,18 +32,30 @@ export const middleware = (request: NextRequest): NextResponse => {
     return NextResponse.next();
   }
 
-  const hasSessionCookie =
-    request.cookies.has('refreshToken');
-
-  if (hasSessionCookie) {
-    return NextResponse.next();
+  if (!request.cookies.has(ADMIN_SESSION_TOKEN_COOKIE)) {
+    return redirectToLogin(request);
   }
 
-  const loginUrl = new URL('/login', request.url);
-  loginUrl.searchParams.set('redirectTo', pathname);
-  return NextResponse.redirect(loginUrl);
+  const user = await parseSessionUserCookie(request.cookies.get(ADMIN_SESSION_USER_COOKIE)?.value);
+
+  if (!user || !canAccessPortal(user)) {
+    return redirectToLogin(request);
+  }
+
+  if (pathname.startsWith('/admins') && !canManageAdmins(user)) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  return NextResponse.next();
 };
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/sellers/:path*', '/audit/:path*', '/admin-users/:path*'],
+  matcher: [
+    '/dashboard/:path*',
+    '/sellers/:path*',
+    '/products/:path*',
+    '/orders/:path*',
+    '/settlements/:path*',
+    '/admins/:path*',
+  ],
 };
